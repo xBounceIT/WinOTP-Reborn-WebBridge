@@ -1,10 +1,13 @@
 # Desktop integration contract
 
-This document is the handoff for the later change to the separate WinOTP Reborn desktop repository. No Electron source or installer in that repository is modified here.
+This document defines the protocol implemented by compatible WinOTP Reborn desktop releases.
+The desktop application and its installer are maintained in a separate repository; no Electron
+or installer source is owned here.
 
 ## Runtime descriptor
 
-When WinOTP is ready to accept browser requests, Electron creates an authenticated current-user local endpoint and atomically publishes `browser-bridge.json`:
+When WinOTP accepts browser requests, Electron creates an authenticated current-user local
+endpoint and atomically publishes `browser-bridge.json`:
 
 ```json
 {

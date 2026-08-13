@@ -8,7 +8,10 @@ const MAX_ARCHIVE_BYTES = 5 * 1024 * 1024;
 const MAX_UNCOMPRESSED_BYTES = 5 * 1024 * 1024;
 const EXPECTED_FILES = [
   "background.js",
-  "icons/winotp.png",
+  "icons/winotp-128.png",
+  "icons/winotp-16.png",
+  "icons/winotp-32.png",
+  "icons/winotp-48.png",
   "manifest.json",
   "popup.css",
   "popup.html",

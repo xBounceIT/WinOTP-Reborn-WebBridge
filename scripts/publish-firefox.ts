@@ -31,6 +31,9 @@ const secret = requiredEnvironment("AMO_JWT_SECRET");
 const archive =
   process.env.FIREFOX_EXTENSION_ZIP ??
   path.join(repositoryRoot, "dist", `winotp-reborn-${packageJson.version}-firefox.zip`);
+const sourceArchive =
+  process.env.FIREFOX_SOURCE_ZIP ??
+  path.join(repositoryRoot, "dist", `winotp-reborn-${packageJson.version}-firefox-source.zip`);
 
 const firefoxManifest = asObject(
   JSON.parse(await readFile(path.join(repositoryRoot, "manifests", "firefox.json"), "utf8")),
@@ -49,6 +52,9 @@ const metadata = asObject(
   JSON.parse(await readFile(path.join(repositoryRoot, "store", "firefox-metadata.json"), "utf8")),
   "Firefox store metadata",
 );
+const privacyPolicy = {
+  "en-US": await readFile(path.join(repositoryRoot, "PRIVACY.md"), "utf8"),
+};
 const status = await publishFirefox({
   apiBase: "https://addons.mozilla.org/api/v5",
   archive,
@@ -56,6 +62,8 @@ const status = await publishFirefox({
   extensionGuid,
   issuer,
   metadata,
+  privacyPolicy,
   secret,
+  sourceArchive,
 });
 process.stdout.write(`Firefox AMO submission state: ${status}\n`);

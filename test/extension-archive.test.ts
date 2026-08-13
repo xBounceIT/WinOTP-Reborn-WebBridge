@@ -8,7 +8,10 @@ import { validateExtensionArchive, type ExtensionTarget } from "../scripts/exten
 
 const expectedFiles: Zippable = {
   "background.js": strToU8(""),
-  "icons/winotp.png": new Uint8Array([1]),
+  "icons/winotp-128.png": new Uint8Array([1]),
+  "icons/winotp-16.png": new Uint8Array([1]),
+  "icons/winotp-32.png": new Uint8Array([1]),
+  "icons/winotp-48.png": new Uint8Array([1]),
   "popup.css": strToU8(""),
   "popup.html": strToU8(""),
   "popup.js": strToU8(""),

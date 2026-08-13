@@ -38,6 +38,7 @@ test.before(async () => {
 test("builds and validates both extension distributions", async () => {
   assert.match(buildOutput, /Built dist[\\/]chrome/u);
   assert.match(buildOutput, /Built dist[\\/]firefox/u);
+  assert.match(buildOutput, /Built dist[\\/]winotp-reborn-1\.0\.0-firefox-source\.zip/u);
 
   const validationOutput = await runScript("scripts/validate-manifests.ts");
   assert.match(validationOutput, /Validated dist\/chrome\/manifest\.json/u);

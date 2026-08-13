@@ -1,5 +1,5 @@
 {
-  "minimum_chrome_version": "152",
+  "minimum_chrome_version": "151",
   "background": {
     "service_worker": "background.js"
   }

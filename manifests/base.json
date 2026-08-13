@@ -8,15 +8,15 @@
     "default_title": "WinOTP Reborn",
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "icons/winotp.png",
-      "32": "icons/winotp.png"
+      "16": "icons/winotp-16.png",
+      "32": "icons/winotp-32.png"
     }
   },
   "icons": {
-    "16": "icons/winotp.png",
-    "32": "icons/winotp.png",
-    "48": "icons/winotp.png",
-    "128": "icons/winotp.png"
+    "16": "icons/winotp-16.png",
+    "32": "icons/winotp-32.png",
+    "48": "icons/winotp-48.png",
+    "128": "icons/winotp-128.png"
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'"

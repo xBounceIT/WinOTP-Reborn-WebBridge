@@ -27,7 +27,10 @@ test("publishes a validated Firefox archive directly through AMO API v5", async 
     archive,
     zipSync({
       "background.js": strToU8(""),
-      "icons/winotp.png": new Uint8Array([1]),
+      "icons/winotp-128.png": new Uint8Array([1]),
+      "icons/winotp-16.png": new Uint8Array([1]),
+      "icons/winotp-32.png": new Uint8Array([1]),
+      "icons/winotp-48.png": new Uint8Array([1]),
       "manifest.json": strToU8(
         JSON.stringify({
           manifest_version: 3,
@@ -38,6 +41,23 @@ test("publishes a validated Firefox archive directly through AMO API v5", async 
       "popup.css": strToU8(""),
       "popup.html": strToU8(""),
       "popup.js": strToU8(""),
+    }),
+  );
+  const sourceArchive = path.join(temporaryDirectory, "source.zip");
+  await writeFile(
+    sourceArchive,
+    zipSync({
+      "AMO_BUILD.md": strToU8("npm ci && npm run build:firefox"),
+      "PRIVACY.md": strToU8("Local only."),
+      "package-lock.json": strToU8("{}"),
+      "package.json": strToU8(JSON.stringify({ version: "0.1.0" })),
+      "manifests/base.json": strToU8("{}"),
+      "manifests/firefox.json": strToU8("{}"),
+      "scripts/build.ts": strToU8(""),
+      "scripts/firefox-source-archive.ts": strToU8(""),
+      "scripts/version.ts": strToU8(""),
+      "src/background/main.ts": strToU8(""),
+      "src/popup/main.ts": strToU8(""),
     }),
   );
 
@@ -75,6 +95,18 @@ test("publishes a validated Firefox archive directly through AMO API v5", async 
           .end(
             JSON.stringify({ guid: "{250f3c41-cf5e-4c20-a07c-e99a8532436b}", status: "nominated" }),
           );
+      } else if (
+        request.method === "PATCH" &&
+        request.url ===
+          "/api/v5/addons/addon/%7B250f3c41-cf5e-4c20-a07c-e99a8532436b%7D/versions/v0.1.0/"
+      ) {
+        response.end(JSON.stringify({ source: "source.zip", version: "0.1.0" }));
+      } else if (
+        request.method === "PATCH" &&
+        request.url ===
+          "/api/v5/addons/addon/%7B250f3c41-cf5e-4c20-a07c-e99a8532436b%7D/eula_policy/"
+      ) {
+        response.end(JSON.stringify({ privacy_policy: { "en-US": "Local only." } }));
       } else {
         response.writeHead(404).end(JSON.stringify({ detail: "unexpected test request" }));
       }
@@ -95,7 +127,9 @@ test("publishes a validated Firefox archive directly through AMO API v5", async 
       extensionGuid: "{250f3c41-cf5e-4c20-a07c-e99a8532436b}",
       issuer: "test-issuer",
       metadata: { name: { "en-US": "WinOTP Reborn" }, version: { license: "MIT" } },
+      privacyPolicy: { "en-US": "Local only." },
       secret: "test-secret",
+      sourceArchive,
     });
 
     assert.equal(status, "nominated");
@@ -105,6 +139,8 @@ test("publishes a validated Firefox archive directly through AMO API v5", async 
         "POST /api/v5/addons/upload/",
         "GET /api/v5/addons/upload/upload-1/",
         "PUT /api/v5/addons/addon/%7B250f3c41-cf5e-4c20-a07c-e99a8532436b%7D/",
+        "PATCH /api/v5/addons/addon/%7B250f3c41-cf5e-4c20-a07c-e99a8532436b%7D/versions/v0.1.0/",
+        "PATCH /api/v5/addons/addon/%7B250f3c41-cf5e-4c20-a07c-e99a8532436b%7D/eula_policy/",
       ],
     );
     assert.ok(requests.every(({ authorization }) => authorization.startsWith("JWT ")));
@@ -114,6 +150,27 @@ test("publishes a validated Firefox archive directly through AMO API v5", async 
     const submission = JSON.parse(requests[2]?.body ?? "{}") as Record<string, unknown>;
     assert.deepEqual(submission.name, { "en-US": "WinOTP Reborn" });
     assert.deepEqual(submission.version, { license: "MIT", upload: "upload-1" });
+    assert.match(requests[3]?.body ?? "", /name="source"/u);
+    assert.match(requests[3]?.body ?? "", /filename="source.zip"/u);
+    assert.deepEqual(JSON.parse(requests[4]?.body ?? "{}"), {
+      privacy_policy: { "en-US": "Local only." },
+    });
+
+    await assert.rejects(
+      publishFirefox({
+        apiBase: `http://127.0.0.1:${address.port}/api/v5`,
+        archive,
+        expectedVersion: "0.1.0",
+        extensionGuid: "{250f3c41-cf5e-4c20-a07c-e99a8532436b}",
+        issuer: "test-issuer",
+        metadata: { name: { "en-US": "WinOTP Reborn" }, version: { license: "MIT" } },
+        privacyPolicy: { "en-US": "" },
+        secret: "test-secret",
+        sourceArchive,
+      }),
+      /privacy policy must contain translated text/u,
+    );
+    assert.equal(requests.length, 5);
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));

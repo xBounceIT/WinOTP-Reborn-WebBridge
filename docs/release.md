@@ -8,7 +8,9 @@ CI uses the current stable Node/npm toolchain and rejects dependency lifecycle s
 
 ## Chrome Web Store one-time setup
 
-1. Create the item manually and complete its Store Listing and Privacy tabs.
+1. Create the item manually and complete its Store Listing and Privacy tabs. Use
+   `https://github.com/xBounceIT/WinOTP-Reborn-WebBridge/blob/main/PRIVACY.md` as the public
+   privacy-policy URL.
 2. Record the assigned 32-character extension ID. Do not invent it or add a wildcard.
 3. Enable Chrome Web Store API v2 in a Google Cloud project.
 4. Create OAuth credentials and a refresh token with the `https://www.googleapis.com/auth/chromewebstore` scope, using the Google account that owns the item.
@@ -32,7 +34,17 @@ The stable extension GUID is already in the manifest. Create AMO API credentials
 - `AMO_JWT_ISSUER`
 - `AMO_JWT_SECRET`
 
-The workflow submits the built archive and `store/firefox-metadata.json` directly through AMO API v5. It creates a fresh short-lived HS256 JWT for every request using only Node's built-in crypto APIs, so release publishing does not pull in a separate signing toolchain. The first submission creates the listing; later versions update the same GUID. AMO performs validation, signing, and publication/review.
+The workflow submits the built archive, its matching reproducible source archive, the public
+privacy policy, and `store/firefox-metadata.json` directly through AMO API v5. It creates a
+fresh short-lived HS256 JWT for every request using only Node's built-in crypto APIs, so
+release publishing does not pull in a separate signing toolchain. The first submission creates
+the listing; later versions update the same GUID. AMO performs validation, signing, and
+publication/review.
+
+The source archive includes `AMO_BUILD.md`, the Node dependency lockfile, build tooling,
+manifests, assets, and TypeScript sources required to reproduce the submitted Firefox ZIP. The
+publisher validates its package version and required contents before making any AMO request,
+then attaches it to the exact submitted version and updates the AMO privacy-policy text.
 
 ## Version compatibility
 

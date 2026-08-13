@@ -17,7 +17,10 @@ Defense in depth is applied at both bridge layers:
 
 ## Local IPC authentication
 
-The future desktop adapter creates a new high-entropy token for each app session and publishes a short-lived descriptor at the fixed current-user runtime path. The descriptor expires within 24 hours; normal desktop behavior should use a much shorter lifetime and rotate it on every start and lock boundary.
+The desktop adapter creates a new high-entropy token for each app session and publishes a
+short-lived descriptor at the fixed current-user runtime path. The descriptor expires within
+24 hours; normal desktop behavior should use a much shorter lifetime and rotate it on every
+start and lock boundary.
 
 The native host opens and validates the same descriptor file handle it reads. On Unix it refuses symlinks and requires a regular file owned by the effective user with no group/other permissions. On Windows it requires the current user as owner and rejects read access for every SID except that user, Local System, and built-in Administrators. The desktop application must create matching restrictive permissions; an ordinary inherited ACL is intentionally insufficient.
 

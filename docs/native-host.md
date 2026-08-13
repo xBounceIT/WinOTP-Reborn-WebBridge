@@ -14,7 +14,9 @@ Build the native host before running `npm run native:manifests` or `npm run nati
 | macOS    | `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/` and Chromium equivalent     | `~/Library/Application Support/Mozilla/NativeMessagingHosts/`     |
 | Linux    | `~/.config/google-chrome/NativeMessagingHosts/` and `~/.config/chromium/NativeMessagingHosts/`  | `~/.mozilla/native-messaging-hosts/`                              |
 
-The future desktop installer should use the same locations (or their documented system-wide equivalents), point manifests to its installed bridge binary, and remove only these registrations/artifacts on uninstall. It must not delete WinOTP user data.
+The WinOTP desktop installer must use the same locations (or their documented system-wide
+equivalents), point manifests to its installed bridge binary, and remove only these
+registrations/artifacts on uninstall. It must not delete WinOTP user data.
 
 ## Troubleshooting
 
@@ -29,7 +31,9 @@ The future desktop installer should use the same locations (or their documented 
 
 ### “WinOTP is not running”
 
-The native host is installed and answered `ping`, but the desktop IPC descriptor or endpoint is absent. In this repository state that is expected: desktop integration is a separate future change.
+The native host is installed and answered `ping`, but the desktop IPC descriptor or endpoint
+is absent. Confirm that a compatible WinOTP release is running, unlocked as required by its
+protection policy, and has browser extension access enabled.
 
 ### “Unexpected bridge error”
 

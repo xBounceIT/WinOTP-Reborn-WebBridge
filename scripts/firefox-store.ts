@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { createAmoJwt } from "./amo-auth.ts";
 import { validateExtensionArchive } from "./extension-archive.ts";
+import { validateFirefoxSourceArchive } from "./firefox-source-archive.ts";
 
 type JsonObject = Record<string, unknown>;
 
@@ -14,7 +15,9 @@ export interface FirefoxPublicationOptions {
   readonly fetcher?: typeof fetch;
   readonly issuer: string;
   readonly metadata: JsonObject;
+  readonly privacyPolicy: JsonObject;
   readonly secret: string;
+  readonly sourceArchive: string;
 }
 
 function asObject(value: unknown, description: string): JsonObject {
@@ -35,6 +38,18 @@ export function assertAmoSubmission(response: JsonObject, extensionGuid: string)
 
 export async function publishFirefox(options: FirefoxPublicationOptions): Promise<string> {
   await validateExtensionArchive(options.archive, "firefox", options.expectedVersion);
+  const sourceArchive = await validateFirefoxSourceArchive(
+    options.sourceArchive,
+    options.expectedVersion,
+  );
+  if (
+    Object.keys(options.privacyPolicy).length === 0 ||
+    Object.values(options.privacyPolicy).some(
+      (value) => typeof value !== "string" || value.trim().length === 0,
+    )
+  ) {
+    throw new Error("Firefox privacy policy must contain translated text");
+  }
   const apiBase = options.apiBase.replace(/\/$/u, "");
   const fetcher = options.fetcher ?? fetch;
   const delay = options.delay ?? (() => new Promise<void>((resolve) => setTimeout(resolve, 2_000)));
@@ -89,7 +104,8 @@ export async function publishFirefox(options: FirefoxPublicationOptions): Promis
   }
 
   const versionMetadata = asObject(options.metadata.version, "Firefox version metadata");
-  const result = await amoFetch(`/addons/addon/${encodeURIComponent(options.extensionGuid)}/`, {
+  const addonEndpoint = `/addons/addon/${encodeURIComponent(options.extensionGuid)}`;
+  const result = await amoFetch(`${addonEndpoint}/`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -98,5 +114,21 @@ export async function publishFirefox(options: FirefoxPublicationOptions): Promis
     }),
   });
 
-  return assertAmoSubmission(result, options.extensionGuid);
+  const status = assertAmoSubmission(result, options.extensionGuid);
+  const sourceForm = new FormData();
+  sourceForm.set(
+    "source",
+    new Blob([Uint8Array.from(sourceArchive)], { type: "application/zip" }),
+    path.basename(options.sourceArchive),
+  );
+  await amoFetch(
+    `${addonEndpoint}/versions/${encodeURIComponent(`v${options.expectedVersion}`)}/`,
+    { method: "PATCH", body: sourceForm },
+  );
+  await amoFetch(`${addonEndpoint}/eula_policy/`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ privacy_policy: options.privacyPolicy }),
+  });
+  return status;
 }

@@ -12,6 +12,25 @@ if (requested !== undefined && requested !== "chrome" && requested !== "firefox"
 }
 const targets: readonly BrowserTarget[] = requested ? [requested] : ["chrome", "firefox"];
 
+const iconPaths = {
+  "16": "icons/winotp-16.png",
+  "32": "icons/winotp-32.png",
+  "48": "icons/winotp-48.png",
+  "128": "icons/winotp-128.png",
+} as const;
+
+async function assertPngDimensions(file: string, expectedSize: number): Promise<void> {
+  const image = await readFile(file);
+  assert.ok(image.byteLength >= 24, `${file} is not a complete PNG`);
+  assert.deepEqual(
+    [...image.subarray(0, 8)],
+    [137, 80, 78, 71, 13, 10, 26, 10],
+    `${file} has an invalid PNG signature`,
+  );
+  assert.equal(image.readUInt32BE(16), expectedSize, `${file} has the wrong width`);
+  assert.equal(image.readUInt32BE(20), expectedSize, `${file} has the wrong height`);
+}
+
 for (const target of targets) {
   const manifest = JSON.parse(
     await readFile(path.join(repositoryRoot, "dist", target, "manifest.json"), "utf8"),
@@ -21,6 +40,16 @@ for (const target of targets) {
   assert.deepEqual(manifest.content_security_policy, {
     extension_pages: "script-src 'self'; object-src 'none'",
   });
+  assert.deepEqual(manifest.icons, iconPaths);
+  assert.deepEqual((manifest.action as Record<string, unknown>).default_icon, {
+    "16": iconPaths["16"],
+    "32": iconPaths["32"],
+  });
+  await Promise.all(
+    Object.entries(iconPaths).map(([size, icon]) =>
+      assertPngDimensions(path.join(repositoryRoot, "dist", target, icon), Number(size)),
+    ),
+  );
   for (const forbidden of [
     "host_permissions",
     "optional_host_permissions",
@@ -42,7 +71,7 @@ for (const target of targets) {
     assert.equal(background.service_worker, "background.js");
     assert.equal("scripts" in background, false);
     assert.equal("browser_specific_settings" in manifest, false);
-    assert.equal(manifest.minimum_chrome_version, "152");
+    assert.equal(manifest.minimum_chrome_version, "151");
   } else {
     assert.deepEqual(background.scripts, ["background.js"]);
     assert.equal("service_worker" in background, false);

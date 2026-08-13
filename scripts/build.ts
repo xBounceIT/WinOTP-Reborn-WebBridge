@@ -3,9 +3,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { zipSync, type Zippable } from "fflate";
+import { createFirefoxSourceArchive } from "./firefox-source-archive.ts";
 import { assertExtensionVersion } from "./version.ts";
 
 type BrowserTarget = "chrome" | "firefox";
+
+const ICON_SIZES = [16, 32, 48, 128] as const;
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageJson = JSON.parse(
@@ -91,9 +94,11 @@ async function buildTarget(target: BrowserTarget): Promise<void> {
       path.join(repositoryRoot, "src", "popup", "styles.css"),
       path.join(targetDirectory, "popup.css"),
     ),
-    copyFile(
-      path.join(repositoryRoot, "public", "icons", "winotp.png"),
-      path.join(targetDirectory, "icons", "winotp.png"),
+    ...ICON_SIZES.map((size) =>
+      copyFile(
+        path.join(repositoryRoot, "public", "icons", `winotp-${size}.png`),
+        path.join(targetDirectory, "icons", `winotp-${size}.png`),
+      ),
     ),
   ]);
 
@@ -119,6 +124,10 @@ async function buildTarget(target: BrowserTarget): Promise<void> {
   process.stdout.write(
     `Built ${path.relative(repositoryRoot, targetDirectory)} and ${path.relative(repositoryRoot, archivePath)}\n`,
   );
+  if (target === "firefox") {
+    const sourceArchive = await createFirefoxSourceArchive(repositoryRoot, packageJson.version);
+    process.stdout.write(`Built ${path.relative(repositoryRoot, sourceArchive)}\n`);
+  }
 }
 
 await mkdir(path.join(repositoryRoot, "dist"), { recursive: true });

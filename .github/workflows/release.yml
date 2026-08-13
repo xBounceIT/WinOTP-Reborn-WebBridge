@@ -162,7 +162,9 @@ jobs:
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
           FIREFOX_EXTENSION_ZIP="dist/winotp-reborn-${GITHUB_REF_NAME#v}-firefox.zip"
+          FIREFOX_SOURCE_ZIP="dist/winotp-reborn-${GITHUB_REF_NAME#v}-firefox-source.zip"
           export FIREFOX_EXTENSION_ZIP
+          export FIREFOX_SOURCE_ZIP
           node scripts/publish-firefox.ts
       - if: env.STORE_CONFIGURED != 'true'
         run: echo "AMO secrets are not configured; skipping publication."

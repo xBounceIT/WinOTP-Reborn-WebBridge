@@ -2,7 +2,12 @@
   "name": {
     "en-US": "WinOTP Reborn"
   },
+  "default_locale": "en-US",
+  "description": {
+    "en-US": "Connect Firefox to the WinOTP Reborn desktop app through a local Native Messaging bridge. Browse account labels and explicitly request a TOTP code without exposing OTP seeds, inspecting web pages, or contacting a cloud service. WinOTP Reborn must be installed locally with browser extension access enabled."
+  },
   "version": {
+    "approval_notes": "Reproducible build instructions are included in AMO_BUILD.md in the attached source archive. Functional testing requires a compatible WinOTP Reborn desktop release with browser extension access enabled. The extension communicates only through the local com.xbounceit.winotp Native Messaging host and has no host permissions, content scripts, or remote services.",
     "license": "MIT"
   },
   "categories": {

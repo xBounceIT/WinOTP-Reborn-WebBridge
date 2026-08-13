@@ -26,7 +26,7 @@ The extension receives only account `id`, `issuer`, and `name`. A TOTP `code`, `
 
 - The latest stable Node.js release (Node.js 26 at the time of writing)
 - Rust stable
-- Chrome 152 or newer, or Firefox 153 or newer
+- Chrome 151 or newer, or Firefox 153 or newer
 
 ## Build and test
 
@@ -53,6 +53,7 @@ dist/chrome/
 dist/firefox/
 dist/winotp-reborn-<version>-chrome.zip
 dist/winotp-reborn-<version>-firefox.zip
+dist/winotp-reborn-<version>-firefox-source.zip
 ```
 
 The ZIP writer fixes timestamps and sorts paths so identical inputs produce reproducible archives. The in-repository validator checks both generated manifests and store publishers revalidate the exact ZIP contents and version before upload; AMO performs its full validation during submission.
@@ -91,6 +92,7 @@ Override the executable with `WINOTP_NATIVE_HOST_PATH` or `--host-path`. Remove 
 
 - [Protocol](docs/protocol.md)
 - [Security and local threat model](docs/security.md)
+- [Privacy policy](PRIVACY.md)
 - [Native host registration and troubleshooting](docs/native-host.md)
 - [Desktop integration contract](docs/desktop-integration.md)
 - [Release and store publishing](docs/release.md)

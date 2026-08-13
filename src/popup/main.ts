@@ -166,7 +166,7 @@ function render(): void {
         : "Attention needed";
   root.innerHTML = `<main class="shell">
     <header class="brand">
-      <img src="icons/winotp.png" alt="">
+      <img src="icons/winotp-32.png" alt="">
       <div><span>WinOTP</span><strong>WebBridge</strong></div>
       <p class="connection connection--${state.kind}">${connectionLabel}</p>
     </header>
