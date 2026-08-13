@@ -2,8 +2,6 @@
 
 The official FOSS browser extension and Native Messaging host for [WinOTP Reborn](https://github.com/xBounceIT/WinOTP-Reborn). It supports Google Chrome/Chromium and Mozilla Firefox without a cloud service, network API, telemetry, or page inspection.
 
-> Desktop integration is intentionally not part of this repository. The extension and native host are complete and independently testable, but account/status/TOTP requests return `APP_NOT_RUNNING` until the WinOTP desktop app implements the documented local IPC endpoint. See [Desktop integration contract](docs/desktop-integration.md).
-
 ## Architecture
 
 ```text
@@ -16,7 +14,7 @@ MV3 background service worker / event page
 winotp-browser-bridge (Rust)
         │ authenticated user-local IPC
         ▼
-future WinOTP Electron main-process adapter
+WinOTP Electron main-process adapter
         │ existing persistence and Rust core APIs
         ▼
 winotp-core
@@ -87,7 +85,7 @@ $env:WINOTP_CHROME_EXTENSION_ID = "<32-character-extension-id>"
 npm run native:install
 ```
 
-Override the executable with `WINOTP_NATIVE_HOST_PATH` or `--host-path`. Remove only the development registration with `npm run native:uninstall`. The tooling supports Chrome, Chromium, and Firefox on Windows, macOS, and Linux. Production users must receive this registration from the future WinOTP desktop installer; an extension cannot install a native host by itself.
+Override the executable with `WINOTP_NATIVE_HOST_PATH` or `--host-path`. Remove only the development registration with `npm run native:uninstall`. The tooling supports Chrome, Chromium, and Firefox on Windows, macOS, and Linux. Production users receive this registration from the WinOTP desktop installer; an extension cannot install a native host by itself.
 
 ## Documentation
 
