@@ -84,7 +84,7 @@ test("distinguishes app not running, host missing, and incompatible protocol", a
   const timedOut = await loadPopup(
     gateway(() => Promise.reject(new NativeTransportError("TIMEOUT"))),
   );
-  assert.equal(timedOut.kind, "error");
+  assert.equal(timedOut.kind, "connection-error");
 
   const incompatibleTransport = await loadPopup(
     gateway(() => Promise.reject(new NativeTransportError("UNSUPPORTED_PROTOCOL"))),
@@ -134,7 +134,10 @@ test("maps mid-session code failures to specific popup states", () => {
     stateForTotpError(new NativeTransportError("HOST_UNAVAILABLE"), ready).kind,
     "host-missing",
   );
-  assert.equal(stateForTotpError(new NativeTransportError("TIMEOUT"), ready).kind, "error");
+  assert.equal(
+    stateForTotpError(new NativeTransportError("TIMEOUT"), ready).kind,
+    "connection-error",
+  );
   assert.equal(stateForTotpError({ code: "ACCOUNT_NOT_FOUND" }, ready).kind, "error");
   assert.equal(stateForTotpError({ code: 42 }, ready).kind, "error");
   assert.equal(stateForTotpError(null, ready).kind, "error");
@@ -166,7 +169,7 @@ test("handles failures at every popup loading stage", async () => {
       return Promise.reject(new Error("status unavailable"));
     }),
   );
-  assert.deepEqual(statusFailure, { kind: "error" });
+  assert.deepEqual(statusFailure, { kind: "connection-error" });
 
   const accountsFailure = await loadPopup(
     gateway((request) => {
@@ -177,7 +180,7 @@ test("handles failures at every popup loading stage", async () => {
       return Promise.reject(new Error("accounts unavailable"));
     }),
   );
-  assert.deepEqual(accountsFailure, { kind: "error" });
+  assert.deepEqual(accountsFailure, { kind: "connection-error" });
 
   const accountsLocked = await loadPopup(
     gateway((request) => {

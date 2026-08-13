@@ -27,7 +27,12 @@ function nativeResponse(request: NativeRequest): unknown {
     case "listAccounts":
       return {
         ...envelope,
-        result: { accounts: [{ id: "account-1", issuer: "Issuer & Co", name: "<user>" }] },
+        result: {
+          accounts: [
+            { id: "account-1", issuer: "Issuer & Co", name: "<user>" },
+            { id: "account-2", issuer: "", name: "No issuer" },
+          ],
+        },
       };
     case "getTotp":
       return { ...envelope, result: { code: "123456", expiresIn: 30, period: 30 } };
@@ -47,7 +52,12 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
   let timeoutListener: (() => void) | undefined;
   let markup = "";
   let copiedCode = "";
-  let popupMode: "host-missing" | "ready" = "host-missing";
+  let popupMode:
+    | "host-missing"
+    | "app-not-running"
+    | "connection-error"
+    | "account-not-found"
+    | "ready" = "host-missing";
 
   const search = {
     value: "",
@@ -57,10 +67,16 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
     focus() {},
     setSelectionRange() {},
   };
-  const accountButton = {
+  const accountAction = {
     dataset: { accountId: "account-1" },
     addEventListener(_type: string, listener: Listener) {
-      listeners.set("account", listener);
+      listeners.set("reveal", listener);
+    },
+  };
+  const secondAccountAction = {
+    dataset: { accountId: "account-2" },
+    addEventListener(_type: string, listener: Listener) {
+      listeners.set("reveal-second", listener);
     },
   };
   const copyButton = {
@@ -101,9 +117,11 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
       return null;
     },
     querySelectorAll(selector: string): readonly unknown[] {
-      return selector === "[data-account-id]" && markup.includes("data-account-id")
-        ? [accountButton]
-        : [];
+      if (selector !== "[data-account-id]") return [];
+      const actions: unknown[] = [];
+      if (markup.includes('data-account-id="account-1"')) actions.push(accountAction);
+      if (markup.includes('data-account-id="account-2"')) actions.push(secondAccountAction);
+      return actions;
     },
   };
 
@@ -117,6 +135,34 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
       const request = message as NativeRequest;
       if (popupMode === "host-missing") {
         callback({ kind: "transport-error", reason: "HOST_UNAVAILABLE" });
+        return;
+      }
+      if (popupMode === "connection-error") {
+        callback({ kind: "transport-error", reason: "TIMEOUT" });
+        return;
+      }
+      if (popupMode === "account-not-found" && request.method === "getTotp") {
+        callback({
+          kind: "native-response",
+          response: {
+            version: 1,
+            requestId: request.requestId,
+            ok: false,
+            error: { code: "ACCOUNT_NOT_FOUND", message: "ACCOUNT_NOT_FOUND" },
+          },
+        });
+        return;
+      }
+      if (popupMode === "app-not-running" && request.method === "getStatus") {
+        callback({
+          kind: "native-response",
+          response: {
+            version: 1,
+            requestId: request.requestId,
+            ok: false,
+            error: { code: "APP_NOT_RUNNING", message: "APP_NOT_RUNNING" },
+          },
+        });
         return;
       }
       callback({ kind: "native-response", response: nativeResponse(request) });
@@ -165,13 +211,36 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
     await import("../src/popup/main.ts");
     await nextTurn();
     assert.match(markup, /WinOTP bridge not installed/u);
+    assert.match(markup, /Allow browser extension access/u);
+    assert.match(markup, /Retry connection/u);
+    assert.match(markup, /<strong>WebBridge<\/strong>/u);
+    assert.doesNotMatch(markup, /Codes stay on this device|<footer/u);
+
+    popupMode = "app-not-running";
+    listeners.get("retry")?.();
+    await nextTurn();
+    assert.match(markup, /WinOTP is not connected/u);
+    assert.match(markup, /Allow browser extension access/u);
+
+    popupMode = "connection-error";
+    listeners.get("retry")?.();
+    await nextTurn();
+    assert.match(markup, /Couldn’t connect to WinOTP/u);
+    assert.match(markup, /Allow browser extension access/u);
 
     popupMode = "ready";
     listeners.get("retry")?.();
     await nextTurn();
-    assert.match(markup, /WinOTP connected/u);
+    assert.match(markup, /connection--ready">Connected<\/p>/u);
+    assert.doesNotMatch(markup, /WinOTP connected|connection--ready"><i>/u);
     assert.match(markup, /Issuer &amp; Co/u);
     assert.match(markup, /&lt;user&gt;/u);
+    assert.match(markup, /<span class="account__issuer">No issuer<\/span>\s*<\/span>/u);
+    assert.match(
+      markup,
+      /class="account__reveal"[^>]*>[\s\S]*class="reveal-action"[^>]*>Show<\/span>/u,
+    );
+    assert.equal(markup.match(/data-account-id=/gu)?.length, 2);
 
     search.value = "missing";
     listeners.get("search")?.();
@@ -179,9 +248,10 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
     search.value = "";
     listeners.get("search")?.();
 
-    listeners.get("account")?.();
+    listeners.get("reveal")?.();
     await nextTurn();
     assert.match(markup, /account--revealed/u);
+    assert.equal(markup.match(/data-account-id=/gu)?.length, 1);
     assert.ok(intervalListener);
 
     now += 1_000;
@@ -199,6 +269,12 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
     now += 29_000;
     intervalListener?.();
     assert.doesNotMatch(markup, /account--revealed/u);
+
+    popupMode = "account-not-found";
+    listeners.get("reveal")?.();
+    await nextTurn();
+    assert.match(markup, /Unexpected bridge error/u);
+    assert.doesNotMatch(markup, /Allow browser extension access/u);
 
     let backgroundListener: Parameters<RuntimeApi["onMessage"]["addListener"]>[0] | undefined;
     let nativeMessageListener: ((response: unknown) => void) | undefined;

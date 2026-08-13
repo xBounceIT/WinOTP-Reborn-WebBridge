@@ -21,6 +21,13 @@ let timer: number | undefined;
 let refreshGeneration = 0;
 let codeGeneration = 0;
 
+const htmlEntities: Readonly<Record<string, string>> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+};
+
 function clearActiveCode(): void {
   activeCode = undefined;
   if (timer !== undefined) window.clearInterval(timer);
@@ -28,30 +35,64 @@ function clearActiveCode(): void {
 }
 
 function escapeHtml(value: string): string {
-  return value.replace(/[&<>"]/g, (character) => {
-    const entities: Record<string, string> = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-    };
-    return entities[character] ?? character;
-  });
+  return value.replace(/[&<>"]/g, (character) => htmlEntities[character] ?? character);
 }
 
-function statusView(kind: PopupState["kind"]): string {
-  const content: Record<Exclude<PopupState["kind"], "ready">, readonly [string, string, string]> = {
-    connecting: ["Connecting…", "Looking for the local WinOTP bridge.", ""],
+type StatusKind = Exclude<PopupState["kind"], "ready">;
+type ConnectionGuideKind = Extract<
+  StatusKind,
+  "host-missing" | "app-not-running" | "connection-error"
+>;
+type ReadyState = Extract<PopupState, { kind: "ready" }>;
+
+function connectionGuideView(kind: ConnectionGuideKind): string {
+  const content: Record<ConnectionGuideKind, readonly [string, string]> = {
     "host-missing": [
       "WinOTP bridge not installed",
-      "Install or repair WinOTP Reborn to add the browser bridge.",
-      "Retry",
+      "Install or update WinOTP Reborn, then enable browser access in the desktop app.",
     ],
     "app-not-running": [
-      "WinOTP is not running",
-      "Open WinOTP, then retry the connection.",
-      "Retry",
+      "WinOTP is not connected",
+      "Open the desktop app and allow browser access to start the local connection.",
     ],
+    "connection-error": [
+      "Couldn’t connect to WinOTP",
+      "Check browser access in the desktop app, then try the connection again.",
+    ],
+  };
+  const [title, message] = content[kind];
+  return `<section class="connection-guide" aria-live="polite">
+    <header class="connection-guide__intro">
+      <h1>${title}</h1>
+      <p>${message}</p>
+    </header>
+    <ol class="connection-steps">
+      <li>
+        <span aria-hidden="true">1</span>
+        <div><strong>Open WinOTP Reborn</strong><p>Launch the desktop app and unlock it.</p></div>
+      </li>
+      <li>
+        <span aria-hidden="true">2</span>
+        <div><strong>Open Settings</strong><p>Select Settings from the app navigation.</p></div>
+      </li>
+      <li>
+        <span aria-hidden="true">3</span>
+        <div><strong>Enable browser access</strong><p>Turn on <q>Allow browser extension access</q>.</p></div>
+      </li>
+    </ol>
+    <button class="button button--primary connection-guide__retry" data-action="retry">Retry connection</button>
+  </section>`;
+}
+
+function statusView(kind: StatusKind): string {
+  if (kind === "host-missing" || kind === "app-not-running" || kind === "connection-error") {
+    return connectionGuideView(kind);
+  }
+  const content: Record<
+    "connecting" | "locked" | "incompatible" | "error",
+    readonly [string, string, string]
+  > = {
+    connecting: ["Connecting…", "Looking for the local WinOTP bridge.", ""],
     locked: ["WinOTP is locked", "Unlock WinOTP on your desktop to view accounts.", "Check again"],
     incompatible: [
       "Bridge version incompatible",
@@ -64,7 +105,6 @@ function statusView(kind: PopupState["kind"]): string {
       "Retry",
     ],
   };
-  if (kind === "ready") return "";
   const [title, message, action] = content[kind];
   return `<section class="state-card state-card--${kind}" aria-live="polite">
     <div class="state-glyph" aria-hidden="true"><span></span></div>
@@ -74,26 +114,34 @@ function statusView(kind: PopupState["kind"]): string {
   </section>`;
 }
 
-function accountView(): string {
-  if (state.kind !== "ready") return "";
-  const accounts = filterAccounts(state.accounts, query);
+function accountView(readyState: ReadyState): string {
+  const accounts = filterAccounts(readyState.accounts, query);
   const list = accounts
     .map((account) => {
       const code = activeCode?.accountId === account.id ? activeCode : undefined;
       const remaining = code ? Math.max(0, Math.ceil((code.expiresAt - Date.now()) / 1000)) : 0;
       const progress = code ? Math.max(0, Math.min(1, remaining / code.result.period)) : 0;
+      const issuer = account.issuer.trim();
+      const identity = `<span class="account__issuer">${escapeHtml(issuer || account.name)}</span>
+          ${issuer ? `<strong>${escapeHtml(account.name)}</strong>` : ""}`;
+      const accountAction = code
+        ? `<div class="account__identity">${identity}</div>`
+        : `<button class="account__reveal" data-account-id="${escapeHtml(account.id)}" aria-label="Show code for ${escapeHtml(account.name)}">
+          <span class="account__identity">${identity}</span>
+          <span class="reveal-action" aria-hidden="true">Show</span>
+        </button>`;
       return `<li class="account${code ? " account--revealed" : ""}">
-        <button class="account__identity" data-account-id="${escapeHtml(account.id)}" aria-label="Show code for ${escapeHtml(account.name)}">
-          <span class="account__issuer">${escapeHtml(account.issuer || "Account")}</span>
-          <strong>${escapeHtml(account.name)}</strong>
-        </button>
-        <div class="account__code" ${code ? "" : "hidden"}>
-          <button class="code" data-copy-code="${code ? escapeHtml(code.result.code) : ""}" aria-label="Copy current code">
-            ${code ? escapeHtml(code.result.code) : ""}
+        ${accountAction}
+        ${
+          code
+            ? `<div class="account__code">
+          <button class="code" data-copy-code="${escapeHtml(code.result.code)}" aria-label="Copy current code">
+            ${escapeHtml(code.result.code)}
           </button>
           <span class="countdown" style="--progress:${progress}" aria-label="${remaining} seconds remaining">${remaining}s</span>
-        </div>
-        <span class="reveal-mark" ${code ? "hidden" : ""} aria-hidden="true">→</span>
+        </div>`
+            : ""
+        }
       </li>`;
     })
     .join("");
@@ -103,7 +151,7 @@ function accountView(): string {
       <span class="sr-only">Search accounts</span>
       <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg>
       <input type="search" data-search autocomplete="off" placeholder="Find an account" value="${escapeHtml(query)}">
-      <kbd>${state.accounts.length}</kbd>
+      <kbd>${readyState.accounts.length}</kbd>
     </label>
     <ul class="account-list">${list || `<li class="empty">${query ? "No matching accounts" : "No accounts in WinOTP"}</li>`}</ul>
   </section>`;
@@ -112,18 +160,17 @@ function accountView(): string {
 function render(): void {
   const connectionLabel =
     state.kind === "ready"
-      ? "WinOTP connected"
+      ? "Connected"
       : state.kind === "connecting"
         ? "Connecting"
         : "Attention needed";
   root.innerHTML = `<main class="shell">
     <header class="brand">
       <img src="icons/winotp.png" alt="">
-      <div><span>WinOTP</span><strong>Reborn</strong></div>
-      <p class="connection connection--${state.kind}"><i></i>${connectionLabel}</p>
+      <div><span>WinOTP</span><strong>WebBridge</strong></div>
+      <p class="connection connection--${state.kind}">${connectionLabel}</p>
     </header>
-    ${state.kind === "ready" ? accountView() : statusView(state.kind)}
-    <footer><span>Codes stay on this device</span><span aria-hidden="true">◆</span></footer>
+    ${state.kind === "ready" ? accountView(state) : statusView(state.kind)}
     <div class="toast" role="status" aria-live="polite" hidden>Code copied</div>
   </main>`;
 
