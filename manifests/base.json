@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "WinOTP Reborn",
+  "short_name": "WinOTP",
+  "description": "Securely request TOTP codes from the local WinOTP Reborn desktop app.",
+  "permissions": ["nativeMessaging"],
+  "action": {
+    "default_title": "WinOTP Reborn",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/winotp.png",
+      "32": "icons/winotp.png"
+    }
+  },
+  "icons": {
+    "16": "icons/winotp.png",
+    "32": "icons/winotp.png",
+    "48": "icons/winotp.png",
+    "128": "icons/winotp.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  }
+}

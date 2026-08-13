@@ -1,0 +1,40 @@
+name: Verify WebBridge
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  extension:
+    name: Verify extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: current
+          cache: npm
+      - run: npm ci --strict-allow-scripts
+      - run: npm audit --audit-level=low
+      - run: npm run check
+
+  native-host:
+    name: Native host (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest, macos-15-intel]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup update stable --no-self-update
+      - run: cargo test --manifest-path rust/Cargo.toml --workspace
+      - run: cargo build --release --manifest-path rust/Cargo.toml --package winotp-browser-bridge
+      - if: runner.os == 'Linux'
+        run: cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+      - if: runner.os == 'Linux'
+        run: cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets -- -D warnings

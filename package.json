@@ -1,0 +1,45 @@
+{
+  "name": "winotp-reborn-webbridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Official browser extension and Native Messaging bridge for WinOTP Reborn",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.ts",
+    "build:chrome": "node scripts/build.ts chrome",
+    "build:firefox": "node scripts/build.ts firefox",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build && node scripts/validate-manifests.ts",
+    "format": "oxfmt --write src scripts test manifests *.json *.md .github",
+    "format:check": "oxfmt --check src scripts test manifests *.json *.md .github",
+    "lint": "oxlint src scripts test",
+    "lint:firefox": "npm run build:firefox && node scripts/validate-manifests.ts firefox",
+    "native:build": "cargo build --manifest-path rust/Cargo.toml --package winotp-browser-bridge",
+    "native:test": "cargo test --manifest-path rust/Cargo.toml --workspace",
+    "native:manifests": "node scripts/native-host.ts generate",
+    "native:install": "node scripts/native-host.ts install",
+    "native:uninstall": "node scripts/native-host.ts uninstall",
+    "publish:chrome": "node scripts/publish-chrome.ts",
+    "publish:firefox": "node scripts/publish-firefox.ts",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "esbuild": "^0.28.2",
+    "fflate": "^0.8.3",
+    "oxfmt": "^0.63.0",
+    "oxlint": "^1.78.0",
+    "typescript": "^7.0.2"
+  },
+  "overrides": {
+    "undici-types": "8.10.0"
+  },
+  "engines": {
+    "node": ">=26.0.0"
+  },
+  "packageManager": "npm@11.19.0",
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

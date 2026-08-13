@@ -1,0 +1,168 @@
+name: Release WebBridge
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webbridge-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  extension:
+    name: Build browser extensions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: current
+          cache: npm
+      - run: npm ci --strict-allow-scripts
+      - run: npm audit --audit-level=low
+      - env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/verify-release-tag.ts
+      - run: npm run check
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-extensions
+          path: dist/*.zip
+          if-no-files-found: error
+
+  native-host:
+    name: Build native host (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            binary: rust/target/release/winotp-browser-bridge.exe
+            artifact: winotp-browser-bridge-windows-x64.zip
+          - name: linux-x64
+            os: ubuntu-latest
+            binary: rust/target/release/winotp-browser-bridge
+            artifact: winotp-browser-bridge-linux-x64.tar.gz
+          - name: macos-arm64
+            os: macos-latest
+            binary: rust/target/release/winotp-browser-bridge
+            artifact: winotp-browser-bridge-macos-arm64.tar.gz
+          - name: macos-x64
+            os: macos-15-intel
+            binary: rust/target/release/winotp-browser-bridge
+            artifact: winotp-browser-bridge-macos-x64.tar.gz
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup update stable --no-self-update
+      - run: cargo test --manifest-path rust/Cargo.toml --workspace
+      - run: cargo build --release --manifest-path rust/Cargo.toml --package winotp-browser-bridge
+      - if: runner.os == 'Linux'
+        run: cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+      - if: runner.os == 'Linux'
+        run: cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets -- -D warnings
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts
+          Compress-Archive -LiteralPath "${{ matrix.binary }}" -DestinationPath "artifacts/${{ matrix.artifact }}"
+      - if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          tar -C rust/target/release -czf "artifacts/${{ matrix.artifact }}" winotp-browser-bridge
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-${{ matrix.name }}
+          path: artifacts/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  github-release:
+    name: Publish GitHub release
+    needs: [extension, native-host]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: release-artifacts
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cd release-artifacts
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | sort | xargs sha256sum > SHA256SUMS
+          gh release create "$RELEASE_TAG" * --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
+
+  chrome-store:
+    name: Submit Chrome Web Store build
+    needs: extension
+    runs-on: ubuntu-latest
+    env:
+      STORE_CONFIGURED: ${{ secrets.CHROME_CLIENT_ID != '' && secrets.CHROME_CLIENT_SECRET != '' && secrets.CHROME_REFRESH_TOKEN != '' && secrets.CHROME_PUBLISHER_ID != '' && secrets.CHROME_EXTENSION_ID != '' }}
+    steps:
+      - if: env.STORE_CONFIGURED == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: env.STORE_CONFIGURED == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: current
+          cache: npm
+      - if: env.STORE_CONFIGURED == 'true'
+        run: npm ci --strict-allow-scripts
+      - if: env.STORE_CONFIGURED == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: browser-extensions
+          path: dist
+      - if: env.STORE_CONFIGURED == 'true'
+        env:
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+          CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+        run: |
+          CHROME_EXTENSION_ZIP="dist/winotp-reborn-${GITHUB_REF_NAME#v}-chrome.zip"
+          export CHROME_EXTENSION_ZIP
+          node scripts/publish-chrome.ts
+      - if: env.STORE_CONFIGURED != 'true'
+        run: echo "Chrome Web Store secrets are not configured; skipping publication."
+
+  firefox-amo:
+    name: Submit Firefox AMO build
+    needs: extension
+    runs-on: ubuntu-latest
+    env:
+      STORE_CONFIGURED: ${{ secrets.AMO_JWT_ISSUER != '' && secrets.AMO_JWT_SECRET != '' }}
+    steps:
+      - if: env.STORE_CONFIGURED == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: env.STORE_CONFIGURED == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: current
+          cache: npm
+      - if: env.STORE_CONFIGURED == 'true'
+        run: npm ci --strict-allow-scripts
+      - if: env.STORE_CONFIGURED == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: browser-extensions
+          path: dist
+      - if: env.STORE_CONFIGURED == 'true'
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          FIREFOX_EXTENSION_ZIP="dist/winotp-reborn-${GITHUB_REF_NAME#v}-firefox.zip"
+          export FIREFOX_EXTENSION_ZIP
+          node scripts/publish-firefox.ts
+      - if: env.STORE_CONFIGURED != 'true'
+        run: echo "AMO secrets are not configured; skipping publication."
