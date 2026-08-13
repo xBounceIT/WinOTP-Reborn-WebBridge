@@ -92,7 +92,11 @@ export function sendNativeRequest<T>(
         const response = parseNativeResponse<T>(request, rawResponse);
         finish(() => resolve(response));
       } catch (error) {
-        finish(() => reject(isProtocolMismatch(request, rawResponse) ? new NativeProtocolMismatchError() : error));
+        finish(() =>
+          reject(
+            isProtocolMismatch(request, rawResponse) ? new NativeProtocolMismatchError() : error,
+          ),
+        );
       }
     });
 

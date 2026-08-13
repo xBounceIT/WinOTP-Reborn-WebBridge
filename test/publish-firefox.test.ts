@@ -58,7 +58,13 @@ test("publishes a validated Firefox archive directly through AMO API v5", async 
         response.writeHead(201).end(JSON.stringify({ uuid: "upload-1", processed: false }));
       } else if (request.method === "GET" && request.url === "/api/v5/addons/upload/upload-1/") {
         response.end(
-          JSON.stringify({ uuid: "upload-1", processed: true, valid: true, submitted: false, version: "0.1.0" }),
+          JSON.stringify({
+            uuid: "upload-1",
+            processed: true,
+            valid: true,
+            submitted: false,
+            version: "0.1.0",
+          }),
         );
       } else if (
         request.method === "PUT" &&
@@ -66,7 +72,9 @@ test("publishes a validated Firefox archive directly through AMO API v5", async 
       ) {
         response
           .writeHead(201)
-          .end(JSON.stringify({ guid: "{250f3c41-cf5e-4c20-a07c-e99a8532436b}", status: "nominated" }));
+          .end(
+            JSON.stringify({ guid: "{250f3c41-cf5e-4c20-a07c-e99a8532436b}", status: "nominated" }),
+          );
       } else {
         response.writeHead(404).end(JSON.stringify({ detail: "unexpected test request" }));
       }
@@ -76,7 +84,8 @@ test("publishes a validated Firefox archive directly through AMO API v5", async 
   try {
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
-    if (typeof address !== "object" || address === null) throw new Error("Test server has no TCP address");
+    if (typeof address !== "object" || address === null)
+      throw new Error("Test server has no TCP address");
 
     const status = await publishFirefox({
       apiBase: `http://127.0.0.1:${address.port}/api/v5`,

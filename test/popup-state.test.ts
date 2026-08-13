@@ -17,11 +17,16 @@ function response<T>(request: NativeRequest, result: T): NativeResponse<T> {
   return { version: 1, requestId: request.requestId, ok: true, result };
 }
 
-function error(request: NativeRequest, code: "APP_NOT_RUNNING" | "APP_LOCKED" | "UNSUPPORTED_PROTOCOL"): NativeResponse {
+function error(
+  request: NativeRequest,
+  code: "APP_NOT_RUNNING" | "APP_LOCKED" | "UNSUPPORTED_PROTOCOL",
+): NativeResponse {
   return { version: 1, requestId: request.requestId, ok: false, error: { code, message: code } };
 }
 
-function gateway(handler: (request: NativeRequest) => NativeResponse | Promise<NativeResponse>): NativeGateway {
+function gateway(
+  handler: (request: NativeRequest) => NativeResponse | Promise<NativeResponse>,
+): NativeGateway {
   return {
     async request<T>(request: NativeRequest): Promise<NativeResponse<T>> {
       return (await handler(request)) as NativeResponse<T>;
@@ -32,8 +37,10 @@ function gateway(handler: (request: NativeRequest) => NativeResponse | Promise<N
 test("loads the connected account list", async () => {
   const state = await loadPopup(
     gateway((request) => {
-      if (request.method === "ping") return response(request, { protocolVersion: 1, bridgeVersion: "0.1.0" });
-      if (request.method === "getStatus") return response(request, { state: "unlocked", appVersion: "2.0.1" });
+      if (request.method === "ping")
+        return response(request, { protocolVersion: 1, bridgeVersion: "0.1.0" });
+      if (request.method === "getStatus")
+        return response(request, { state: "unlocked", appVersion: "2.0.1" });
       return response(request, { accounts: [account] });
     }),
   );
@@ -50,7 +57,8 @@ test("shows locked without requesting account metadata", async () => {
   const state = await loadPopup(
     gateway((request) => {
       methods.push(request.method);
-      if (request.method === "ping") return response(request, { protocolVersion: 1, bridgeVersion: "0.1.0" });
+      if (request.method === "ping")
+        return response(request, { protocolVersion: 1, bridgeVersion: "0.1.0" });
       return response(request, { state: "locked", appVersion: "2.0.1" });
     }),
   );
@@ -73,7 +81,9 @@ test("distinguishes app not running, host missing, and incompatible protocol", a
   );
   assert.equal(missing.kind, "host-missing");
 
-  const timedOut = await loadPopup(gateway(() => Promise.reject(new NativeTransportError("TIMEOUT"))));
+  const timedOut = await loadPopup(
+    gateway(() => Promise.reject(new NativeTransportError("TIMEOUT"))),
+  );
   assert.equal(timedOut.kind, "error");
 
   const incompatibleTransport = await loadPopup(
@@ -81,7 +91,9 @@ test("distinguishes app not running, host missing, and incompatible protocol", a
   );
   assert.equal(incompatibleTransport.kind, "incompatible");
 
-  const incompatible = await loadPopup(gateway((request) => error(request, "UNSUPPORTED_PROTOCOL")));
+  const incompatible = await loadPopup(
+    gateway((request) => error(request, "UNSUPPORTED_PROTOCOL")),
+  );
   assert.equal(incompatible.kind, "incompatible");
 });
 
@@ -106,7 +118,10 @@ test("maps mid-session code failures to specific popup states", () => {
   assert.equal(stateForTotpError({ code: "APP_LOCKED" }, ready).kind, "locked");
   assert.equal(stateForTotpError({ code: "APP_NOT_RUNNING" }, ready).kind, "app-not-running");
   assert.equal(stateForTotpError({ code: "UNSUPPORTED_PROTOCOL" }, ready).kind, "incompatible");
-  assert.equal(stateForTotpError(new NativeTransportError("HOST_UNAVAILABLE"), ready).kind, "host-missing");
+  assert.equal(
+    stateForTotpError(new NativeTransportError("HOST_UNAVAILABLE"), ready).kind,
+    "host-missing",
+  );
   assert.equal(stateForTotpError(new NativeTransportError("TIMEOUT"), ready).kind, "error");
 });
 

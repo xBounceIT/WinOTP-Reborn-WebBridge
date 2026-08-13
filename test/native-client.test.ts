@@ -17,8 +17,16 @@ function runtimeWith(
   let messageListener: (message: unknown) => void = () => {};
   let disconnectListener: () => void = () => {};
   const port: RuntimePort = {
-    onMessage: { addListener(listener) { messageListener = listener; } },
-    onDisconnect: { addListener(listener) { disconnectListener = listener; } },
+    onMessage: {
+      addListener(listener) {
+        messageListener = listener;
+      },
+    },
+    onDisconnect: {
+      addListener(listener) {
+        disconnectListener = listener;
+      },
+    },
     postMessage(message) {
       if (error) disconnectListener();
       else handler(message, (response) => messageListener(response));
@@ -30,7 +38,9 @@ function runtimeWith(
     ...(error ? { lastError: error } : {}),
     onMessage: { addListener() {} },
     sendMessage() {},
-    connectNative() { return port; },
+    connectNative() {
+      return port;
+    },
   };
 }
 
@@ -51,7 +61,10 @@ test("sends and validates a normal native response", async () => {
 
 test("maps a missing native host to a transport error without exposing browser text", async () => {
   const runtime = runtimeWith(() => {}, { message: "Specified native messaging host not found." });
-  await assert.rejects(sendNativeRequest(runtime, createRequest("ping")), NativeHostUnavailableError);
+  await assert.rejects(
+    sendNativeRequest(runtime, createRequest("ping")),
+    NativeHostUnavailableError,
+  );
 });
 
 test("rejects protocol mismatches", async () => {
@@ -81,6 +94,9 @@ test("times out and disconnects an unresponsive native host", async () => {
     return port;
   };
 
-  await assert.rejects(sendNativeRequest(runtime, createRequest("ping"), 10), NativeHostTimeoutError);
+  await assert.rejects(
+    sendNativeRequest(runtime, createRequest("ping"), 10),
+    NativeHostTimeoutError,
+  );
   assert.equal(disconnected, true);
 });

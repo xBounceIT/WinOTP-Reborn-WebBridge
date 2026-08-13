@@ -8,19 +8,30 @@ import { assertExtensionVersion } from "./version.ts";
 type BrowserTarget = "chrome" | "firefox";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const packageJson = JSON.parse(await readFile(path.join(repositoryRoot, "package.json"), "utf8")) as {
+const packageJson = JSON.parse(
+  await readFile(path.join(repositoryRoot, "package.json"), "utf8"),
+) as {
   version: string;
 };
 assertExtensionVersion(packageJson.version);
 const requestedTarget = process.argv[2];
 
-if (requestedTarget !== undefined && requestedTarget !== "chrome" && requestedTarget !== "firefox") {
+if (
+  requestedTarget !== undefined &&
+  requestedTarget !== "chrome" &&
+  requestedTarget !== "firefox"
+) {
   throw new Error("Usage: node scripts/build.ts [chrome|firefox]");
 }
 
-const targets: readonly BrowserTarget[] = requestedTarget ? [requestedTarget] : ["chrome", "firefox"];
+const targets: readonly BrowserTarget[] = requestedTarget
+  ? [requestedTarget]
+  : ["chrome", "firefox"];
 
-function mergeManifest(base: Record<string, unknown>, overlay: Record<string, unknown>): Record<string, unknown> {
+function mergeManifest(
+  base: Record<string, unknown>,
+  overlay: Record<string, unknown>,
+): Record<string, unknown> {
   return { ...base, ...overlay, version: packageJson.version };
 }
 
@@ -36,7 +47,10 @@ async function collectFiles(directory: string, prefix = ""): Promise<Zippable> {
     } else if (entry.isFile()) {
       // ZIP stores local DOS date fields. Constructing the epoch in local time keeps
       // the encoded timestamp identical regardless of the build machine's timezone.
-      result[relative] = [new Uint8Array(await readFile(absolute)), { mtime: new Date(1980, 0, 1) }];
+      result[relative] = [
+        new Uint8Array(await readFile(absolute)),
+        { mtime: new Date(1980, 0, 1) },
+      ];
     }
   }
   return result;
@@ -69,8 +83,14 @@ async function buildTarget(target: BrowserTarget): Promise<void> {
       target: browserTarget,
       legalComments: "none",
     }),
-    copyFile(path.join(repositoryRoot, "src", "popup", "index.html"), path.join(targetDirectory, "popup.html")),
-    copyFile(path.join(repositoryRoot, "src", "popup", "styles.css"), path.join(targetDirectory, "popup.css")),
+    copyFile(
+      path.join(repositoryRoot, "src", "popup", "index.html"),
+      path.join(targetDirectory, "popup.html"),
+    ),
+    copyFile(
+      path.join(repositoryRoot, "src", "popup", "styles.css"),
+      path.join(targetDirectory, "popup.css"),
+    ),
     copyFile(
       path.join(repositoryRoot, "public", "icons", "winotp.png"),
       path.join(targetDirectory, "icons", "winotp.png"),
@@ -84,12 +104,21 @@ async function buildTarget(target: BrowserTarget): Promise<void> {
     await readFile(path.join(repositoryRoot, "manifests", `${target}.json`), "utf8"),
   ) as Record<string, unknown>;
   const manifest = mergeManifest(base, overlay);
-  await writeFile(path.join(targetDirectory, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  await writeFile(
+    path.join(targetDirectory, "manifest.json"),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
 
   const zip = zipSync(await collectFiles(targetDirectory), { level: 9 });
-  const archivePath = path.join(repositoryRoot, "dist", `winotp-reborn-${packageJson.version}-${target}.zip`);
+  const archivePath = path.join(
+    repositoryRoot,
+    "dist",
+    `winotp-reborn-${packageJson.version}-${target}.zip`,
+  );
   await writeFile(archivePath, zip);
-  process.stdout.write(`Built ${path.relative(repositoryRoot, targetDirectory)} and ${path.relative(repositoryRoot, archivePath)}\n`);
+  process.stdout.write(
+    `Built ${path.relative(repositoryRoot, targetDirectory)} and ${path.relative(repositoryRoot, archivePath)}\n`,
+  );
 }
 
 await mkdir(path.join(repositoryRoot, "dist"), { recursive: true });

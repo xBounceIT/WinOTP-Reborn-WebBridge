@@ -6,7 +6,14 @@ export type ExtensionTarget = "chrome" | "firefox";
 const FIREFOX_EXTENSION_ID = "{250f3c41-cf5e-4c20-a07c-e99a8532436b}";
 const MAX_ARCHIVE_BYTES = 5 * 1024 * 1024;
 const MAX_UNCOMPRESSED_BYTES = 5 * 1024 * 1024;
-const EXPECTED_FILES = ["background.js", "icons/winotp.png", "manifest.json", "popup.css", "popup.html", "popup.js"];
+const EXPECTED_FILES = [
+  "background.js",
+  "icons/winotp.png",
+  "manifest.json",
+  "popup.css",
+  "popup.html",
+  "popup.js",
+];
 
 function assertBoundedZipDirectory(archive: Uint8Array): void {
   const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
@@ -37,7 +44,8 @@ function assertBoundedZipDirectory(archive: Uint8Array): void {
     const nameLength = view.getUint16(offset + 28, true);
     const extraLength = view.getUint16(offset + 30, true);
     const commentLength = view.getUint16(offset + 32, true);
-    if (uncompressedSize === 0xffff_ffff) throw new Error("ZIP64 extension archives are not supported");
+    if (uncompressedSize === 0xffff_ffff)
+      throw new Error("ZIP64 extension archives are not supported");
     uncompressedBytes += uncompressedSize;
     if (uncompressedBytes > MAX_UNCOMPRESSED_BYTES) {
       throw new Error("Extension archive exceeds the uncompressed size limit");
@@ -74,7 +82,10 @@ export async function validateExtensionArchive(
     throw new Error("Extension archive is not a valid ZIP file");
   }
   const names = Object.keys(files).sort();
-  if (names.length !== EXPECTED_FILES.length || names.some((name, index) => name !== EXPECTED_FILES[index])) {
+  if (
+    names.length !== EXPECTED_FILES.length ||
+    names.some((name, index) => name !== EXPECTED_FILES[index])
+  ) {
     throw new Error(`Extension archive contains unexpected files: ${names.join(", ")}`);
   }
 
@@ -97,7 +108,10 @@ export async function validateExtensionArchive(
     throw new Error("Chrome archive contains Firefox-specific settings");
   }
   if (target === "firefox") {
-    const gecko = asObject(asObject(settings, "browser_specific_settings").gecko, "browser_specific_settings.gecko");
+    const gecko = asObject(
+      asObject(settings, "browser_specific_settings").gecko,
+      "browser_specific_settings.gecko",
+    );
     if (gecko.id !== FIREFOX_EXTENSION_ID) {
       throw new Error("Firefox archive contains an unexpected extension ID");
     }

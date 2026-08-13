@@ -1,7 +1,13 @@
 import type { TotpResult } from "../shared/protocol.ts";
 import { getRuntime } from "../shared/webextension.ts";
 import { createGateway } from "./gateway.ts";
-import { filterAccounts, loadPopup, requestTotp, stateForTotpError, type PopupState } from "./state.ts";
+import {
+  filterAccounts,
+  loadPopup,
+  requestTotp,
+  stateForTotpError,
+  type PopupState,
+} from "./state.ts";
 
 const appRoot = document.querySelector<HTMLElement>("#app");
 if (!appRoot) throw new Error("Popup root is missing");
@@ -23,7 +29,12 @@ function clearActiveCode(): void {
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"]/g, (character) => {
-    const entities: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
+    const entities: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+    };
     return entities[character] ?? character;
   });
 }
@@ -36,10 +47,22 @@ function statusView(kind: PopupState["kind"]): string {
       "Install or repair WinOTP Reborn to add the browser bridge.",
       "Retry",
     ],
-    "app-not-running": ["WinOTP is not running", "Open WinOTP, then retry the connection.", "Retry"],
+    "app-not-running": [
+      "WinOTP is not running",
+      "Open WinOTP, then retry the connection.",
+      "Retry",
+    ],
     locked: ["WinOTP is locked", "Unlock WinOTP on your desktop to view accounts.", "Check again"],
-    incompatible: ["Bridge version incompatible", "Update WinOTP Reborn and this extension, then try again.", "Retry"],
-    error: ["Unexpected bridge error", "No account data or codes were returned. Try again.", "Retry"],
+    incompatible: [
+      "Bridge version incompatible",
+      "Update WinOTP Reborn and this extension, then try again.",
+      "Retry",
+    ],
+    error: [
+      "Unexpected bridge error",
+      "No account data or codes were returned. Try again.",
+      "Retry",
+    ],
   };
   if (kind === "ready") return "";
   const [title, message, action] = content[kind];
@@ -87,7 +110,12 @@ function accountView(): string {
 }
 
 function render(): void {
-  const connectionLabel = state.kind === "ready" ? "WinOTP connected" : state.kind === "connecting" ? "Connecting" : "Attention needed";
+  const connectionLabel =
+    state.kind === "ready"
+      ? "WinOTP connected"
+      : state.kind === "connecting"
+        ? "Connecting"
+        : "Attention needed";
   root.innerHTML = `<main class="shell">
     <header class="brand">
       <img src="icons/winotp.png" alt="">
@@ -99,7 +127,9 @@ function render(): void {
     <div class="toast" role="status" aria-live="polite" hidden>Code copied</div>
   </main>`;
 
-  root.querySelector<HTMLElement>("[data-action='retry']")?.addEventListener("click", () => void refresh());
+  root
+    .querySelector<HTMLElement>("[data-action='retry']")
+    ?.addEventListener("click", () => void refresh());
   const search = root.querySelector<HTMLInputElement>("[data-search]");
   search?.addEventListener("input", () => {
     query = search.value;
@@ -160,7 +190,10 @@ function updateCountdown(): void {
   if (!countdown) return;
   countdown.textContent = `${remaining}s`;
   countdown.setAttribute("aria-label", `${remaining} seconds remaining`);
-  countdown.style.setProperty("--progress", String(Math.max(0, Math.min(1, remaining / activeCode.result.period))));
+  countdown.style.setProperty(
+    "--progress",
+    String(Math.max(0, Math.min(1, remaining / activeCode.result.period))),
+  );
 }
 
 async function copyCode(code: string): Promise<void> {

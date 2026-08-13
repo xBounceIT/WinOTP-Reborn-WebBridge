@@ -13,7 +13,11 @@ export async function waitForChromeUpload(
     throw new Error(`Chrome Web Store rejected the upload: ${JSON.stringify(upload)}`);
   }
 
-  for (let attempt = 0; state === "UPLOAD_IN_PROGRESS" && attempt < MAX_POLL_ATTEMPTS; attempt += 1) {
+  for (
+    let attempt = 0;
+    state === "UPLOAD_IN_PROGRESS" && attempt < MAX_POLL_ATTEMPTS;
+    attempt += 1
+  ) {
     await delay();
     result = await fetchStatus();
     state = result.lastAsyncUploadState;

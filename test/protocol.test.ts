@@ -100,10 +100,12 @@ test("rejects duplicate IDs and fields that exceed UTF-8 byte limits", () => {
       version: 1,
       requestId: request.requestId,
       ok: true,
-      result: { accounts: [
-        { id: "duplicate", issuer: "One", name: "First" },
-        { id: "duplicate", issuer: "Two", name: "Second" },
-      ] },
+      result: {
+        accounts: [
+          { id: "duplicate", issuer: "One", name: "First" },
+          { id: "duplicate", issuer: "Two", name: "Second" },
+        ],
+      },
     }),
   );
   assert.throws(() =>

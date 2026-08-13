@@ -9,8 +9,12 @@ function runtimeWith(reply: unknown): RuntimeApi {
   return {
     id: "extension-id",
     onMessage: { addListener() {} },
-    connectNative() { throw new Error("unused"); },
-    sendMessage(_message, callback) { callback(reply); },
+    connectNative() {
+      throw new Error("unused");
+    },
+    sendMessage(_message, callback) {
+      callback(reply);
+    },
   };
 }
 

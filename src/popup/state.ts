@@ -58,7 +58,9 @@ export async function loadPopup(gateway: NativeGateway): Promise<PopupState> {
   if (!ping.ok) return stateForError(ping.error.code);
 
   const bridgeVersion = ping.result.bridgeVersion;
-  const status = await gateway.request<StatusResult>(createRequest("getStatus")).catch(() => undefined);
+  const status = await gateway
+    .request<StatusResult>(createRequest("getStatus"))
+    .catch(() => undefined);
   if (!status) return { kind: "error" };
   if (!status.ok) return stateForError(status.error.code, bridgeVersion);
   if (status.result.state === "locked") {
@@ -111,8 +113,13 @@ export function stateForTotpError(
   return stateForError(error.code, current.bridgeVersion, current.appVersion);
 }
 
-export function filterAccounts(accounts: readonly BrowserAccount[], query: string): readonly BrowserAccount[] {
+export function filterAccounts(
+  accounts: readonly BrowserAccount[],
+  query: string,
+): readonly BrowserAccount[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return accounts;
-  return accounts.filter((account) => `${account.issuer}\n${account.name}`.toLowerCase().includes(needle));
+  return accounts.filter((account) =>
+    `${account.issuer}\n${account.name}`.toLowerCase().includes(needle),
+  );
 }

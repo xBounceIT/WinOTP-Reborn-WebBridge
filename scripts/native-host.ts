@@ -21,16 +21,20 @@ if (
       rawArguments[0] !== "--host-path" ||
       !rawArguments[1]))
 ) {
-  throw new Error("Usage: node scripts/native-host.ts <generate|install|uninstall> [--host-path <absolute path>]");
+  throw new Error(
+    "Usage: node scripts/native-host.ts <generate|install|uninstall> [--host-path <absolute path>]",
+  );
 }
 
 function hostPath(): string {
   const configured = rawArguments[1] ?? process.env.WINOTP_NATIVE_HOST_PATH;
-  const executable = process.platform === "win32" ? "winotp-browser-bridge.exe" : "winotp-browser-bridge";
+  const executable =
+    process.platform === "win32" ? "winotp-browser-bridge.exe" : "winotp-browser-bridge";
   if (configured !== undefined && !path.isAbsolute(configured)) {
     throw new Error("The native host path must be absolute");
   }
-  const candidate = configured ?? path.join(repositoryRoot, "rust", "target", "release", executable);
+  const candidate =
+    configured ?? path.join(repositoryRoot, "rust", "target", "release", executable);
   let stats;
   try {
     stats = statSync(candidate);
@@ -90,7 +94,16 @@ async function install(): Promise<void> {
       ["HKCU\\Software\\Mozilla\\NativeMessagingHosts", generated.firefox],
     ] as const;
     for (const [root, manifestPath] of registrations) {
-      runRegistry(["add", `${root}\\${HOST_NAME}`, "/ve", "/t", "REG_SZ", "/d", manifestPath, "/f"]);
+      runRegistry([
+        "add",
+        `${root}\\${HOST_NAME}`,
+        "/ve",
+        "/t",
+        "REG_SZ",
+        "/d",
+        manifestPath,
+        "/f",
+      ]);
     }
     return;
   }
@@ -133,9 +146,15 @@ async function uninstall(): Promise<void> {
             "Library/Application Support/Chromium/NativeMessagingHosts",
             "Library/Application Support/Mozilla/NativeMessagingHosts",
           ]
-        : [".config/google-chrome/NativeMessagingHosts", ".config/chromium/NativeMessagingHosts", ".mozilla/native-messaging-hosts"];
+        : [
+            ".config/google-chrome/NativeMessagingHosts",
+            ".config/chromium/NativeMessagingHosts",
+            ".mozilla/native-messaging-hosts",
+          ];
     await Promise.all(
-      directories.map((directory) => rm(path.join(home, directory, `${HOST_NAME}.json`), { force: true })),
+      directories.map((directory) =>
+        rm(path.join(home, directory, `${HOST_NAME}.json`), { force: true }),
+      ),
     );
   }
   await rm(outputDirectory, { recursive: true, force: true });

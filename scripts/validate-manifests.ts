@@ -30,7 +30,11 @@ for (const target of targets) {
     "sandbox",
     "web_accessible_resources",
   ]) {
-    assert.equal(forbidden in manifest, false, `${target} manifest contains forbidden ${forbidden}`);
+    assert.equal(
+      forbidden in manifest,
+      false,
+      `${target} manifest contains forbidden ${forbidden}`,
+    );
   }
 
   const background = manifest.background as Record<string, unknown>;

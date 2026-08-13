@@ -198,7 +198,10 @@ export function parseNativeResponse<T>(request: NativeRequest, value: unknown): 
   }
 
   if (value.ok) {
-    if (!hasExactKeys(value, ["version", "requestId", "ok", "result"]) || !isResultFor(request, value.result)) {
+    if (
+      !hasExactKeys(value, ["version", "requestId", "ok", "result"]) ||
+      !isResultFor(request, value.result)
+    ) {
       throw new TypeError("Invalid or unsafe Native Messaging result");
     }
     return value as NativeResponse<T>;

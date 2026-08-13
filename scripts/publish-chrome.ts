@@ -5,7 +5,9 @@ import { assertChromePublication, waitForChromeUpload } from "./chrome-store.ts"
 import { validateExtensionArchive } from "./extension-archive.ts";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const packageJson = JSON.parse(await readFile(path.join(repositoryRoot, "package.json"), "utf8")) as {
+const packageJson = JSON.parse(
+  await readFile(path.join(repositoryRoot, "package.json"), "utf8"),
+) as {
   version: string;
 };
 
@@ -19,7 +21,8 @@ async function checkedFetch(url: string, init: RequestInit): Promise<Record<stri
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(60_000) });
   const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok) {
-    const message = typeof body.error === "object" ? JSON.stringify(body.error) : response.statusText;
+    const message =
+      typeof body.error === "object" ? JSON.stringify(body.error) : response.statusText;
     throw new Error(`Chrome Web Store API request failed (${response.status}): ${message}`);
   }
   return body;
@@ -50,15 +53,19 @@ const tokenResponse = await checkedFetch("https://oauth2.googleapis.com/token", 
   }),
 });
 const accessToken = tokenResponse.access_token;
-if (typeof accessToken !== "string") throw new Error("OAuth token response did not contain an access token");
+if (typeof accessToken !== "string")
+  throw new Error("OAuth token response did not contain an access token");
 
 const itemName = `publishers/${encodeURIComponent(publisherId)}/items/${encodeURIComponent(extensionId)}`;
 const authorization = { authorization: `Bearer ${accessToken}` };
-const upload = await checkedFetch(`https://chromewebstore.googleapis.com/upload/v2/${itemName}:upload`, {
-  method: "POST",
-  headers: { ...authorization, "content-type": "application/zip" },
-  body: await readFile(archive),
-});
+const upload = await checkedFetch(
+  `https://chromewebstore.googleapis.com/upload/v2/${itemName}:upload`,
+  {
+    method: "POST",
+    headers: { ...authorization, "content-type": "application/zip" },
+    body: await readFile(archive),
+  },
+);
 if (upload.itemId !== extensionId) {
   throw new Error("Chrome Web Store upload response contained an unexpected extension ID");
 }
@@ -77,10 +84,15 @@ if (uploadStatus.itemId !== extensionId) {
   throw new Error("Chrome Web Store status response contained an unexpected extension ID");
 }
 
-const published = await checkedFetch(`https://chromewebstore.googleapis.com/v2/${itemName}:publish`, {
-  method: "POST",
-  headers: { ...authorization, "content-type": "application/json" },
-  body: JSON.stringify({ publishType: "DEFAULT_PUBLISH", blockOnWarnings: true }),
-});
+const published = await checkedFetch(
+  `https://chromewebstore.googleapis.com/v2/${itemName}:publish`,
+  {
+    method: "POST",
+    headers: { ...authorization, "content-type": "application/json" },
+    body: JSON.stringify({ publishType: "DEFAULT_PUBLISH", blockOnWarnings: true }),
+  },
+);
 assertChromePublication(published, extensionId);
-process.stdout.write(`Chrome Web Store submission state: ${String(published.state ?? "submitted")}\n`);
+process.stdout.write(
+  `Chrome Web Store submission state: ${String(published.state ?? "submitted")}\n`,
+);

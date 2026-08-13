@@ -44,9 +44,7 @@ input:focus-visible {
   min-height: 480px;
   flex-direction: column;
   overflow: hidden;
-  background:
-    linear-gradient(135deg, rgb(110 169 239 / 11%), transparent 34%),
-    var(--canvas);
+  background: linear-gradient(135deg, rgb(110 169 239 / 11%), transparent 34%), var(--canvas);
 }
 
 .shell::before {
@@ -166,7 +164,11 @@ input:focus-visible {
   border-radius: 6px;
   color: var(--muted);
   background: var(--surface-muted);
-  font: 700 10px/1.2 ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font:
+    700 10px/1.2 ui-monospace,
+    "SFMono-Regular",
+    Consolas,
+    monospace;
   text-align: center;
 }
 
@@ -194,7 +196,10 @@ input:focus-visible {
   border: 1px solid transparent;
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface) 86%, transparent);
-  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
 }
 
 .account:hover,
@@ -253,7 +258,11 @@ input:focus-visible {
 }
 
 .code {
-  font: 760 20px/1 ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font:
+    760 20px/1 ui-monospace,
+    "SFMono-Regular",
+    Consolas,
+    monospace;
   letter-spacing: 0.08em;
 }
 
@@ -266,7 +275,9 @@ input:focus-visible {
   border-radius: 50%;
   color: var(--muted);
   background: conic-gradient(var(--cobalt) calc(var(--progress) * 1turn), var(--surface-muted) 0);
-  font: 700 8px/1 ui-monospace, monospace;
+  font:
+    700 8px/1 ui-monospace,
+    monospace;
 }
 
 .countdown {
@@ -407,11 +418,16 @@ footer span:last-child {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes pulse {
-  50% { opacity: 0.35; transform: scale(0.85); }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
 }
 
 @media (prefers-color-scheme: dark) {

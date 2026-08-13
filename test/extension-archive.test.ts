@@ -31,7 +31,11 @@ async function writeArchive(
   const archive = path.join(directory, `${target}-${Object.keys(extraFiles).length}.zip`);
   await writeFile(
     archive,
-    zipSync({ ...expectedFiles, ...extraFiles, "manifest.json": strToU8(JSON.stringify(manifest)) }),
+    zipSync({
+      ...expectedFiles,
+      ...extraFiles,
+      "manifest.json": strToU8(JSON.stringify(manifest)),
+    }),
   );
   return archive;
 }
@@ -43,7 +47,11 @@ test("accepts only the expected browser archive and release version", async () =
     await validateExtensionArchive(await writeArchive(directory, "firefox"), "firefox", "0.1.0");
 
     await assert.rejects(
-      validateExtensionArchive(await writeArchive(directory, "chrome", { version: "9.9.9" }), "chrome", "0.1.0"),
+      validateExtensionArchive(
+        await writeArchive(directory, "chrome", { version: "9.9.9" }),
+        "chrome",
+        "0.1.0",
+      ),
       /does not contain Manifest V3 version/u,
     );
     await assert.rejects(
@@ -56,7 +64,12 @@ test("accepts only the expected browser archive and release version", async () =
     );
     await assert.rejects(
       validateExtensionArchive(
-        await writeArchive(directory, "chrome", {}, { "background.js": new Uint8Array(6 * 1024 * 1024) }),
+        await writeArchive(
+          directory,
+          "chrome",
+          {},
+          { "background.js": new Uint8Array(6 * 1024 * 1024) },
+        ),
         "chrome",
         "0.1.0",
       ),

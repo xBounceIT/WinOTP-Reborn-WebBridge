@@ -11,8 +11,13 @@ test("accepts only stable Chrome-compatible release versions", () => {
 
 test("reads only the Rust workspace package version", () => {
   assert.equal(
-    cargoWorkspaceVersion('[workspace]\nmembers = []\n\n[workspace.package]\nversion = "1.2.3"\nedition = "2024"\n'),
+    cargoWorkspaceVersion(
+      '[workspace]\nmembers = []\n\n[workspace.package]\nversion = "1.2.3"\nedition = "2024"\n',
+    ),
     "1.2.3",
   );
-  assert.throws(() => cargoWorkspaceVersion('[package]\nversion = "9.9.9"\n'), /no workspace package version/u);
+  assert.throws(
+    () => cargoWorkspaceVersion('[package]\nversion = "9.9.9"\n'),
+    /no workspace package version/u,
+  );
 });

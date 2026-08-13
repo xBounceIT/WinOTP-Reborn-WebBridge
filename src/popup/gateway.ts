@@ -1,11 +1,18 @@
-import { parseNativeResponse, type NativeRequest, type NativeResponse } from "../shared/protocol.ts";
+import {
+  parseNativeResponse,
+  type NativeRequest,
+  type NativeResponse,
+} from "../shared/protocol.ts";
 import { isBackgroundReply, NativeTransportError } from "../shared/transport.ts";
 import type { RuntimeApi } from "../shared/webextension.ts";
 import type { NativeGateway } from "./state.ts";
 
 const DEFAULT_BACKGROUND_TIMEOUT_MS = 7_000;
 
-export function createGateway(runtime: RuntimeApi, timeoutMs = DEFAULT_BACKGROUND_TIMEOUT_MS): NativeGateway {
+export function createGateway(
+  runtime: RuntimeApi,
+  timeoutMs = DEFAULT_BACKGROUND_TIMEOUT_MS,
+): NativeGateway {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new TypeError("Background message timeout must be positive");
   }

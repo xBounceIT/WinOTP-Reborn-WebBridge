@@ -66,17 +66,22 @@ export async function publishFirefox(options: FirefoxPublicationOptions): Promis
 
   let upload = await amoFetch("/addons/upload/", { method: "POST", body: form });
   const uploadId = upload.uuid;
-  if (typeof uploadId !== "string" || !uploadId) throw new Error("AMO upload response did not contain a UUID");
+  if (typeof uploadId !== "string" || !uploadId)
+    throw new Error("AMO upload response did not contain a UUID");
 
   for (let attempt = 0; upload.processed !== true && attempt < 60; attempt += 1) {
     await delay();
     upload = await amoFetch(`/addons/upload/${encodeURIComponent(uploadId)}/`, { method: "GET" });
   }
-  if (upload.processed !== true) throw new Error("AMO validation did not finish within two minutes");
+  if (upload.processed !== true)
+    throw new Error("AMO validation did not finish within two minutes");
   if (upload.valid !== true) {
-    throw new Error(`AMO validation failed: ${JSON.stringify(upload.validation ?? "No details returned")}`);
+    throw new Error(
+      `AMO validation failed: ${JSON.stringify(upload.validation ?? "No details returned")}`,
+    );
   }
-  if (upload.submitted === true) throw new Error("AMO reported that this upload was already submitted");
+  if (upload.submitted === true)
+    throw new Error("AMO reported that this upload was already submitted");
   if (upload.version !== options.expectedVersion) {
     throw new Error(
       `AMO validated extension version ${String(upload.version)}, expected ${options.expectedVersion}`,
