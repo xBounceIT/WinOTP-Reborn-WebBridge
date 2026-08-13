@@ -1,6 +1,6 @@
 # Release and store publishing
 
-Tags such as `v0.1.0` must match both `package.json` and the Rust workspace version. The release workflow runs TypeScript checks/tests, Firefox manifest linting, Rust tests/formatting, builds reproducible Chrome and Firefox ZIPs, packages the native host for Windows x64, Linux x64, and both macOS ARM64 and x64, and attaches the artifacts plus `SHA256SUMS` to the GitHub Release. Unix hosts use `tar.gz` so executable permissions survive artifact transport.
+Tags such as `v1.0.0` must match both `package.json` and the Rust workspace version. The release workflow runs TypeScript checks/tests, Firefox manifest linting, Rust tests/formatting, builds reproducible Chrome and Firefox ZIPs, packages the native host for Windows x64, Linux x64, and both macOS ARM64 and x64, and attaches the artifacts plus `SHA256SUMS` to the GitHub Release. Unix hosts use `tar.gz` so executable permissions survive artifact transport.
 
 Pull-request workflows never publish to either store. Store jobs exist only in the tag-triggered workflow and run only when their required secrets are configured.
 
