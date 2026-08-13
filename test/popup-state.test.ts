@@ -106,6 +106,18 @@ test("requests a code only for an explicit account action", async () => {
     account.id,
   );
   assert.deepEqual(result, { code: "123456", expiresIn: 18, period: 30 });
+
+  await assert.rejects(
+    requestTotp(
+      gateway((request) => error(request, "APP_LOCKED")),
+      account.id,
+    ),
+    (failure) =>
+      typeof failure === "object" &&
+      failure !== null &&
+      "code" in failure &&
+      failure.code === "APP_LOCKED",
+  );
 });
 
 test("maps mid-session code failures to specific popup states", () => {
@@ -123,6 +135,9 @@ test("maps mid-session code failures to specific popup states", () => {
     "host-missing",
   );
   assert.equal(stateForTotpError(new NativeTransportError("TIMEOUT"), ready).kind, "error");
+  assert.equal(stateForTotpError({ code: "ACCOUNT_NOT_FOUND" }, ready).kind, "error");
+  assert.equal(stateForTotpError({ code: 42 }, ready).kind, "error");
+  assert.equal(stateForTotpError(null, ready).kind, "error");
 });
 
 test("filters accounts by issuer and name", () => {
@@ -130,4 +145,52 @@ test("filters accounts by issuer and name", () => {
   assert.deepEqual(filterAccounts(accounts, "example"), [account]);
   assert.deepEqual(filterAccounts(accounts, "ADMIN"), [accounts[1]]);
   assert.deepEqual(filterAccounts(accounts, "issuer"), [accounts[1]]);
+  assert.equal(filterAccounts(accounts, "   "), accounts);
+});
+
+test("handles failures at every popup loading stage", async () => {
+  const pingFailure = await loadPopup(gateway((request) => error(request, "APP_NOT_RUNNING")));
+  assert.deepEqual(pingFailure, { kind: "host-missing" });
+
+  const lockedWithoutVersions = await loadPopup(gateway((request) => error(request, "APP_LOCKED")));
+  assert.deepEqual(lockedWithoutVersions, {
+    kind: "locked",
+    bridgeVersion: "unknown",
+    appVersion: "unknown",
+  });
+
+  const statusFailure = await loadPopup(
+    gateway((request) => {
+      if (request.method === "ping")
+        return response(request, { protocolVersion: 1, bridgeVersion: "0.1.0" });
+      return Promise.reject(new Error("status unavailable"));
+    }),
+  );
+  assert.deepEqual(statusFailure, { kind: "error" });
+
+  const accountsFailure = await loadPopup(
+    gateway((request) => {
+      if (request.method === "ping")
+        return response(request, { protocolVersion: 1, bridgeVersion: "0.1.0" });
+      if (request.method === "getStatus")
+        return response(request, { state: "unlocked", appVersion: "2.0.1" });
+      return Promise.reject(new Error("accounts unavailable"));
+    }),
+  );
+  assert.deepEqual(accountsFailure, { kind: "error" });
+
+  const accountsLocked = await loadPopup(
+    gateway((request) => {
+      if (request.method === "ping")
+        return response(request, { protocolVersion: 1, bridgeVersion: "0.1.0" });
+      if (request.method === "getStatus")
+        return response(request, { state: "unlocked", appVersion: "2.0.1" });
+      return error(request, "APP_LOCKED");
+    }),
+  );
+  assert.deepEqual(accountsLocked, {
+    kind: "locked",
+    bridgeVersion: "0.1.0",
+    appVersion: "2.0.1",
+  });
 });

@@ -9,7 +9,7 @@
     "build": "node scripts/build.ts",
     "build:chrome": "node scripts/build.ts chrome",
     "build:firefox": "node scripts/build.ts firefox",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build && node scripts/validate-manifests.ts",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test:coverage && npm run build && node scripts/validate-manifests.ts",
     "format": "oxfmt --write src scripts test manifests .github package.json package-lock.json tsconfig.json AGENTS.md README.md",
     "format:check": "oxfmt --check src scripts test manifests .github package.json package-lock.json tsconfig.json AGENTS.md README.md",
     "lint": "oxlint src scripts test",
@@ -22,10 +22,12 @@
     "publish:chrome": "node scripts/publish-chrome.ts",
     "publish:firefox": "node scripts/publish-firefox.ts",
     "test": "node --test test/*.test.ts",
+    "test:coverage": "c8 --all --include=\"src/**/*.ts\" --include=\"scripts/**/*.ts\" --check-coverage --statements=80 --lines=80 --branches=80 --functions=80 node --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
+    "c8": "^12.0.0",
     "esbuild": "^0.28.2",
     "fflate": "^0.8.3",
     "oxfmt": "^0.63.0",

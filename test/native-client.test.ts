@@ -7,7 +7,7 @@ import {
   NativeProtocolMismatchError,
   sendNativeRequest,
 } from "../src/native/client.ts";
-import { createRequest } from "../src/shared/protocol.ts";
+import { createRequest, type NativeRequest } from "../src/shared/protocol.ts";
 import type { RuntimeApi, RuntimePort } from "../src/shared/webextension.ts";
 
 function runtimeWith(
@@ -78,6 +78,90 @@ test("rejects protocol mismatches", async () => {
     });
   });
   await assert.rejects(sendNativeRequest(runtime, request), NativeProtocolMismatchError);
+
+  const nestedMismatch = runtimeWith((_message, callback) => {
+    callback({
+      version: 1,
+      requestId: request.requestId,
+      ok: true,
+      result: { protocolVersion: 2, bridgeVersion: "2.0.0" },
+    });
+  });
+  await assert.rejects(sendNativeRequest(nestedMismatch, request), NativeProtocolMismatchError);
+});
+
+test("rejects invalid request options before opening a native connection", async () => {
+  let connections = 0;
+  const runtime = runtimeWith(() => {});
+  const connectNative = runtime.connectNative.bind(runtime);
+  runtime.connectNative = (application) => {
+    connections += 1;
+    return connectNative(application);
+  };
+  const request = createRequest("ping");
+
+  await assert.rejects(sendNativeRequest(runtime, request, 0), /timeout must be positive/u);
+  await assert.rejects(
+    sendNativeRequest(runtime, request, Number.NaN),
+    /timeout must be positive/u,
+  );
+  const oversizedRequest = {
+    ...request,
+    padding: "x".repeat(65_536),
+  } as unknown as NativeRequest;
+  await assert.rejects(sendNativeRequest(runtime, oversizedRequest), /exceeds the size limit/u);
+  assert.equal(connections, 0);
+});
+
+test("maps synchronous connection and post failures to host unavailable", async () => {
+  const connectFailure = runtimeWith(() => {});
+  connectFailure.connectNative = () => {
+    throw new Error("native API unavailable");
+  };
+  await assert.rejects(
+    sendNativeRequest(connectFailure, createRequest("ping")),
+    NativeHostUnavailableError,
+  );
+
+  const postFailure = runtimeWith(() => {});
+  const connectNative = postFailure.connectNative.bind(postFailure);
+  postFailure.connectNative = (application) => {
+    const port = connectNative(application);
+    port.postMessage = () => {
+      throw new Error("port closed");
+    };
+    return port;
+  };
+  await assert.rejects(
+    sendNativeRequest(postFailure, createRequest("ping")),
+    NativeHostUnavailableError,
+  );
+});
+
+test("rejects unsafe responses even when the failed port is already closed", async () => {
+  const request = createRequest("ping");
+  const runtime = runtimeWith((_message, callback) => {
+    callback({
+      version: 1,
+      requestId: request.requestId,
+      ok: true,
+      result: { protocolVersion: 1, bridgeVersion: "0.1.0" },
+      padding: "x".repeat(65_536),
+    });
+  });
+  const connectNative = runtime.connectNative.bind(runtime);
+  runtime.connectNative = (application) => {
+    const port = connectNative(application);
+    port.disconnect = () => {
+      throw new Error("already disconnected");
+    };
+    return port;
+  };
+
+  await assert.rejects(sendNativeRequest(runtime, request), /response exceeds the size limit/u);
+
+  const malformedRuntime = runtimeWith((_message, callback) => callback(null));
+  await assert.rejects(sendNativeRequest(malformedRuntime, request), TypeError);
 });
 
 test("times out and disconnects an unresponsive native host", async () => {

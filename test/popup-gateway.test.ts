@@ -68,3 +68,33 @@ test("times out an unresponsive background and ignores its late reply", async ()
   assert.doesNotThrow(() => reply?.({ kind: "transport-error", reason: "HOST_UNAVAILABLE" }));
   assert.equal(lastErrorReads, 1);
 });
+
+test("rejects invalid timeouts before sending a background message", () => {
+  assert.throws(() => createGateway(runtimeWith(undefined), 0), /timeout must be positive/u);
+  assert.throws(
+    () => createGateway(runtimeWith(undefined), Number.NaN),
+    /timeout must be positive/u,
+  );
+});
+
+test("maps background and runtime failures to stable transport errors", async () => {
+  const request = createRequest("ping");
+  const cases: Array<[RuntimeApi, NativeTransportError["reason"]]> = [
+    [{ ...runtimeWith(undefined), lastError: { message: "message port closed" } }, "NATIVE_ERROR"],
+    [runtimeWith({ kind: "transport-error", reason: "HOST_UNAVAILABLE" }), "HOST_UNAVAILABLE"],
+    [runtimeWith({ kind: "native-response", response: { invalid: true } }), "INVALID_RESPONSE"],
+  ];
+
+  const synchronousFailure = runtimeWith(undefined);
+  synchronousFailure.sendMessage = () => {
+    throw new Error("runtime unavailable");
+  };
+  cases.push([synchronousFailure, "NATIVE_ERROR"]);
+
+  for (const [runtime, reason] of cases) {
+    await assert.rejects(
+      createGateway(runtime).request(request),
+      (error) => error instanceof NativeTransportError && error.reason === reason,
+    );
+  }
+});
