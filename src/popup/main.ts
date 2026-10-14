@@ -106,8 +106,16 @@ function statusView(kind: StatusKind): string {
     ],
   };
   const [title, message, action] = content[kind];
+  const glyph =
+    kind === "connecting"
+      ? `<span class="state-spinner"></span>`
+      : `<svg viewBox="0 0 24 24" focusable="false">${
+          kind === "locked"
+            ? `<rect x="5" y="10" width="14" height="11" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path><path d="M12 14v3"></path>`
+            : `<circle cx="12" cy="12" r="9"></circle><path d="M12 7v6"></path><path d="M12 17h.01"></path>`
+        }</svg>`;
   return `<section class="state-card state-card--${kind}" aria-live="polite">
-    <div class="state-glyph" aria-hidden="true"><span></span></div>
+    <div class="state-glyph" aria-hidden="true">${glyph}</div>
     <h1>${title}</h1>
     <p>${message}</p>
     ${action ? `<button class="button button--primary" data-action="retry">${action}</button>` : ""}
@@ -163,7 +171,9 @@ function render(): void {
       ? "Connected"
       : state.kind === "connecting"
         ? "Connecting"
-        : "Attention needed";
+        : state.kind === "locked"
+          ? "Locked"
+          : "Attention needed";
   root.innerHTML = `<main class="shell">
     <header class="brand">
       <img src="icons/winotp-32.png" alt="">

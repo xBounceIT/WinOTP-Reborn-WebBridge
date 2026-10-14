@@ -52,11 +52,14 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
   let timeoutListener: (() => void) | undefined;
   let markup = "";
   let copiedCode = "";
+  const popupRequests: string[] = [];
   let popupMode:
     | "host-missing"
     | "app-not-running"
     | "connection-error"
     | "account-not-found"
+    | "locked"
+    | "incompatible"
     | "ready" = "host-missing";
 
   const search = {
@@ -133,6 +136,35 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
     },
     sendMessage(message, callback) {
       const request = message as NativeRequest;
+      popupRequests.push(request.method);
+      if (popupMode === "incompatible") {
+        callback({ kind: "transport-error", reason: "UNSUPPORTED_PROTOCOL" });
+        return;
+      }
+      if (popupMode === "locked" && request.method === "getStatus") {
+        callback({
+          kind: "native-response",
+          response: {
+            version: 1,
+            requestId: request.requestId,
+            ok: true,
+            result: { state: "locked", appVersion: "1.0.0" },
+          },
+        });
+        return;
+      }
+      if (popupMode === "locked" && request.method === "getTotp") {
+        callback({
+          kind: "native-response",
+          response: {
+            version: 1,
+            requestId: request.requestId,
+            ok: false,
+            error: { code: "APP_LOCKED", message: "APP_LOCKED" },
+          },
+        });
+        return;
+      }
       if (popupMode === "host-missing") {
         callback({ kind: "transport-error", reason: "HOST_UNAVAILABLE" });
         return;
@@ -228,6 +260,34 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
     assert.match(markup, /Couldn’t connect to WinOTP/u);
     assert.match(markup, /Allow browser extension access/u);
 
+    popupMode = "locked";
+    popupRequests.length = 0;
+    listeners.get("retry")?.();
+    assert.match(markup, /connection--connecting">Connecting<\/p>/u);
+    assert.match(markup, /class="state-spinner"/u);
+    assert.doesNotMatch(markup, /data-action="retry"/u);
+    await nextTurn();
+    assert.deepEqual(popupRequests, ["ping", "getStatus"]);
+    assert.match(markup, /connection--locked">Locked<\/p>/u);
+    assert.match(markup, /WinOTP is locked/u);
+    assert.match(markup, /data-action="retry">Check again<\/button>/u);
+    const lockedGlyph = markup.match(/<div class="state-glyph"[^>]*>.*?<\/div>/u)?.[0];
+    assert.ok(lockedGlyph);
+    assert.match(lockedGlyph, /aria-hidden="true"/u);
+    assert.match(lockedGlyph, /<svg[^>]*focusable="false"/u);
+    assert.match(lockedGlyph, /<rect\b/u);
+    assert.doesNotMatch(markup, /Attention needed|state-spinner|data-account-id|data-copy-code/u);
+
+    popupMode = "incompatible";
+    listeners.get("retry")?.();
+    await nextTurn();
+    assert.match(markup, /Bridge version incompatible/u);
+    assert.match(markup, /connection--incompatible">Attention needed<\/p>/u);
+    const errorGlyph = markup.match(/<div class="state-glyph"[^>]*>.*?<\/div>/u)?.[0];
+    assert.ok(errorGlyph);
+    assert.notEqual(errorGlyph, lockedGlyph);
+    assert.doesNotMatch(errorGlyph, /state-spinner/u);
+
     popupMode = "ready";
     listeners.get("retry")?.();
     await nextTurn();
@@ -275,6 +335,30 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
     await nextTurn();
     assert.match(markup, /Unexpected bridge error/u);
     assert.doesNotMatch(markup, /Allow browser extension access/u);
+    assert.ok(markup.includes(errorGlyph));
+
+    popupMode = "ready";
+    listeners.get("retry")?.();
+    await nextTurn();
+    listeners.get("reveal")?.();
+    await nextTurn();
+    assert.match(markup, /data-copy-code="123456"/u);
+    assert.ok(intervalListener);
+    popupMode = "locked";
+    listeners.get("reveal-second")?.();
+    await nextTurn();
+    assert.match(markup, /connection--locked">Locked<\/p>/u);
+    assert.ok(markup.includes(lockedGlyph));
+    assert.doesNotMatch(markup, /123456|Issuer &amp; Co|&lt;user&gt;|No issuer|data-account-id/u);
+    assert.equal(intervalListener, undefined);
+
+    popupMode = "ready";
+    popupRequests.length = 0;
+    listeners.get("retry")?.();
+    await nextTurn();
+    assert.deepEqual(popupRequests, ["ping", "getStatus", "listAccounts"]);
+    assert.match(markup, /connection--ready">Connected<\/p>/u);
+    assert.doesNotMatch(markup, /state-glyph|data-copy-code/u);
 
     let backgroundListener: Parameters<RuntimeApi["onMessage"]["addListener"]>[0] | undefined;
     let nativeMessageListener: ((response: unknown) => void) | undefined;

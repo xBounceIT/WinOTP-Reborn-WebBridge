@@ -385,21 +385,21 @@ input:focus-visible {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 30px 38px 42px;
+  padding: 32px;
   text-align: center;
 }
 
 .state-glyph {
   display: grid;
-  width: 82px;
-  height: 82px;
-  margin-bottom: 24px;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 20px;
   place-items: center;
   border-radius: 8px;
   background: var(--card);
 }
 
-.state-glyph span {
+.state-spinner {
   width: 28px;
   height: 28px;
   border: 4px solid var(--foreground);
@@ -408,30 +408,30 @@ input:focus-visible {
   animation: spin 1s linear infinite;
 }
 
-.state-card:not(.state-card--connecting) .state-glyph span {
-  width: 13px;
+.state-glyph svg {
+  width: 32px;
   height: 32px;
-  border: 0;
-  border-radius: 9px;
-  background: var(--foreground);
-  animation: none;
-  box-shadow: 0 40px 0 -3px var(--foreground);
-  transform: translateY(-9px);
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
 }
 
 .state-card h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.02em;
 }
 
 .state-card p {
   max-width: 270px;
-  margin: 10px 0 23px;
+  margin: 8px 0 24px;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.55;
+  text-wrap: balance;
 }
 
 .button {
