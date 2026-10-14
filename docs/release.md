@@ -2,14 +2,14 @@
 
 Tags such as `v1.0.0` must match both `package.json` and the Rust workspace version. The release workflow runs TypeScript checks/tests, Firefox manifest linting, Rust tests/formatting, builds reproducible Chrome and Firefox ZIPs, packages the native host for Windows x64, Linux x64, and both macOS ARM64 and x64, and attaches the artifacts plus `SHA256SUMS` to the GitHub Release. Unix hosts use `tar.gz` so executable permissions survive artifact transport.
 
-Pull-request workflows never publish to either store. Store jobs exist only in the tag-triggered workflow and run only when their required secrets are configured.
+Pull-request workflows never publish to either store. New releases use the tag-triggered workflow; a manual Chrome-only workflow can retry an existing release. Store credentials are required for publication.
 
 CI uses the current stable Node/npm toolchain and rejects dependency lifecycle scripts not covered by the pinned `allowScripts` review in `package.json`. Dependency updates that change an install-script package must be reviewed before that allow-list pin is updated.
 
 ## Chrome Web Store one-time setup
 
 1. Create the item manually and complete its Store Listing and Privacy tabs. Use
-   `https://github.com/xBounceIT/WinOTP-Reborn-WebBridge/blob/main/PRIVACY.md` as the public
+   `https://raw.githubusercontent.com/xBounceIT/WinOTP-Reborn-WebBridge/main/PRIVACY.md` as the public
    privacy-policy URL.
 2. Record the assigned 32-character extension ID. Do not invent it or add a wildcard.
 3. Enable Chrome Web Store API v2 in a Google Cloud project.
@@ -52,6 +52,10 @@ permissions:
 Data-use disclosures must reflect `PRIVACY.md`, including temporary local processing of
 account labels, requested authentication codes, and the selected QR image. Do not infer that
 all data-use fields can be left blank merely because there is no remote transmission.
+Disclose website content for the explicit page capture, and include QR import in the single
+purpose, Store description, and Native Messaging justification. If the dashboard reports that
+the GitHub file-view privacy URL is unreachable, use the direct raw policy URL above and save
+the draft to trigger validation again.
 
 After saving the missing dashboard fields, run **Retry Chrome Web Store submission** from
 GitHub Actions on `main`, with `release_tag` set to `v1.1.0` (or the existing release matching
