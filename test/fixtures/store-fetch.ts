@@ -22,7 +22,7 @@ globalThis.fetch = async (input, init) => {
       return jsonResponse({
         itemId: extensionId,
         uploadState: "SUCCEEDED",
-        crxVersion: "1.0.0",
+        crxVersion: "1.1.0",
       });
     }
     if (requestIndex === 3 && url.endsWith(":publish") && method === "POST") {
@@ -38,14 +38,14 @@ globalThis.fetch = async (input, init) => {
         processed: true,
         valid: true,
         submitted: false,
-        version: "1.0.0",
+        version: "1.1.0",
       });
     }
     if (requestIndex === 2 && url.includes("/addons/addon/") && method === "PUT") {
       return jsonResponse({ guid, status: "nominated" }, 201);
     }
-    if (requestIndex === 3 && url.includes("/versions/v1.0.0/") && method === "PATCH") {
-      return jsonResponse({ source: "source.zip", version: "1.0.0" });
+    if (requestIndex === 3 && url.includes("/versions/v1.1.0/") && method === "PATCH") {
+      return jsonResponse({ source: "source.zip", version: "1.1.0" });
     }
     if (requestIndex === 4 && url.endsWith("/eula_policy/") && method === "PATCH") {
       return jsonResponse({ privacy_policy: { "en-US": "Local only." } });
