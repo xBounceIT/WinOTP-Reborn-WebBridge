@@ -13,6 +13,7 @@ const SOURCE_FILES = [
   "manifests/base.json",
   "manifests/firefox.json",
   "public/icons/winotp.png",
+  "public/third-party-licenses.txt",
   "public/icons/winotp-16.png",
   "public/icons/winotp-32.png",
   "public/icons/winotp-48.png",

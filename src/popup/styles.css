@@ -30,6 +30,14 @@ input {
   font: inherit;
 }
 
+body.image-scan-page {
+  width: min(100%, 420px);
+  margin: 32px auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
 button:focus-visible,
 input:focus-visible {
   outline: 2px solid var(--ring);
@@ -102,6 +110,39 @@ input:focus-visible {
 .accounts {
   flex: 1;
   padding: 16px;
+}
+
+.scan__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.scan__actions .button {
+  flex: 1;
+  color: var(--foreground);
+  background: var(--card);
+}
+
+.scan__actions :disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.scan__file {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.scan__file input {
+  max-width: 100%;
+}
+
+.scan__message {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .search {
