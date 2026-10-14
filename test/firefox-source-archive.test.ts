@@ -14,8 +14,8 @@ const repositoryRoot = path.resolve(import.meta.dirname, "..");
 test("creates and validates a reproducible Firefox reviewer source archive", async () => {
   const outputDirectory = await mkdtemp(path.join(tmpdir(), "winotp-firefox-source-test-"));
   try {
-    const archivePath = await createFirefoxSourceArchive(repositoryRoot, "1.0.0", outputDirectory);
-    const validated = await validateFirefoxSourceArchive(archivePath, "1.0.0");
+    const archivePath = await createFirefoxSourceArchive(repositoryRoot, "1.1.0", outputDirectory);
+    const validated = await validateFirefoxSourceArchive(archivePath, "1.1.0");
     assert.deepEqual(validated, await readFile(archivePath));
 
     const names = Object.keys(unzipSync(validated));
@@ -34,7 +34,7 @@ test("creates and validates a reproducible Firefox reviewer source archive", asy
     );
     await assert.rejects(
       validateFirefoxSourceArchive(archivePath, "9.9.9"),
-      /contains version 1\.0\.0, expected 9\.9\.9/u,
+      /contains version 1\.1\.0, expected 9\.9\.9/u,
     );
   } finally {
     await rm(outputDirectory, { recursive: true, force: true });
