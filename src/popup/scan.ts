@@ -1,6 +1,7 @@
 import jsQR from "jsqr";
 import { validateImageHeader } from "./image-bounds.ts";
 import { createRequest, isQrText, type ErrorCode } from "../shared/protocol.ts";
+import { NativeTransportError } from "../shared/transport.ts";
 import type { NativeGateway } from "./state.ts";
 import { getRuntime } from "../shared/webextension.ts";
 
@@ -124,6 +125,9 @@ export async function sendQr(gateway: NativeGateway, text: string): Promise<void
   const response = await gateway.request<{ accepted: true }>(createRequest("importQr", { text }));
   if (response.ok) return;
   switch (response.error.code) {
+    case "NATIVE_HOST_ERROR":
+      // The host may have sent the QR before losing or rejecting the desktop reply.
+      throw new NativeTransportError("NATIVE_ERROR");
     case "APP_LOCKED":
       throw new QrImportError(response.error.code, "Unlock WinOTP, then scan again.");
     case "APP_NOT_RUNNING":

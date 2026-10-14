@@ -234,6 +234,30 @@ test("image scan UI waits for acknowledgement, prevents duplicate submissions, a
       await tick();
       assert.equal(imports, sent);
     }
+    retry?.();
+    await tick();
+    change?.();
+    await tick();
+    const sentBeforeHostError: number = imports;
+    reply?.({
+      kind: "native-response",
+      response: {
+        version: 1,
+        requestId: pending?.requestId,
+        ok: false,
+        error: { code: "NATIVE_HOST_ERROR", message: "private desktop detail" },
+      },
+    });
+    await tick();
+    assert.match(markup, /connection--connection-error/);
+    assert.match(markup, /Check WinOTP for a pending import before scanning again/);
+    assert.doesNotMatch(
+      markup,
+      /could not accept|Private account|Private issuer|data-qr-file|private desktop detail/,
+    );
+    change?.();
+    await tick();
+    assert.equal(imports, sentBeforeHostError);
   } finally {
     for (const undo of restore.reverse()) undo();
   }
@@ -377,6 +401,12 @@ test("hands off exactly one opaque QR request and reports safe desktop failures"
     await assert.rejects(sendQr(gateway, "otpauth://test"), new RegExp(message));
   }
   assert.equal(requests.length, 6);
+  code = "NATIVE_HOST_ERROR";
+  await assert.rejects(
+    sendQr(gateway, "otpauth://test"),
+    (error: unknown) => error instanceof NativeTransportError && error.reason === "NATIVE_ERROR",
+  );
+  assert.equal(requests.length, 7);
 });
 
 test("uncertain import delivery preserves transport reasons without retrying automatically", async () => {
