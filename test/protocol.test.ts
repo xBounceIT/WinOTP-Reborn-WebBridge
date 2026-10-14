@@ -10,6 +10,21 @@ import {
   type NativeResponse,
 } from "../src/shared/protocol.ts";
 
+test("HTTP page contexts create distinct valid correlation IDs without randomUUID", () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, "crypto");
+  Object.defineProperty(globalThis, "crypto", { configurable: true, value: {} });
+  try {
+    const first = createRequest("importQr", { text: "otpauth://test" });
+    const second = createRequest("importQr", { text: "otpauth://test" });
+    assert.equal(isNativeRequest(first), true);
+    assert.equal(isNativeRequest(second), true);
+    assert.notEqual(first.requestId, second.requestId);
+  } finally {
+    if (original) Object.defineProperty(globalThis, "crypto", original);
+    else Reflect.deleteProperty(globalThis, "crypto");
+  }
+});
+
 test("QR import accepts bounded opaque input and only an acknowledgement response", () => {
   const text = "otpauth://totp/Example?secret=TEST";
   const request = createRequest("importQr", { text });

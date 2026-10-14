@@ -118,7 +118,7 @@ fn open_descriptor(path: &Path) -> Result<File, TransportError> {
 
     let file = OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
+        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)
         .map_err(descriptor_open_error)?;
     let metadata = file
@@ -134,21 +134,78 @@ fn open_descriptor(path: &Path) -> Result<File, TransportError> {
 }
 
 #[cfg(windows)]
+struct ProcessUser(Vec<usize>);
+
+#[cfg(windows)]
+impl ProcessUser {
+    fn read(process: windows_sys::Win32::Foundation::HANDLE) -> Result<Self, TransportError> {
+        use std::mem::size_of;
+        use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+        use std::ptr::null_mut;
+        use windows_sys::Win32::Security::{
+            GetTokenInformation, TOKEN_QUERY, TOKEN_USER, TokenUser,
+        };
+        use windows_sys::Win32::System::Threading::OpenProcessToken;
+        let mut token = null_mut();
+        if unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) } == 0 {
+            return Err(TransportError::InvalidDescriptor);
+        }
+        let token = unsafe { OwnedHandle::from_raw_handle(token) };
+        let mut required = 0;
+        unsafe {
+            GetTokenInformation(
+                token.as_raw_handle(),
+                TokenUser,
+                null_mut(),
+                0,
+                &mut required,
+            )
+        };
+        if required < size_of::<TOKEN_USER>() as u32 {
+            return Err(TransportError::InvalidDescriptor);
+        }
+        let mut buffer = vec![0_usize; (required as usize).div_ceil(size_of::<usize>())];
+        if unsafe {
+            GetTokenInformation(
+                token.as_raw_handle(),
+                TokenUser,
+                buffer.as_mut_ptr().cast(),
+                required,
+                &mut required,
+            )
+        } == 0
+        {
+            return Err(TransportError::InvalidDescriptor);
+        }
+        Ok(Self(buffer))
+    }
+
+    fn sid(&self) -> windows_sys::Win32::Security::PSID {
+        unsafe {
+            (*self
+                .0
+                .as_ptr()
+                .cast::<windows_sys::Win32::Security::TOKEN_USER>())
+            .User
+            .Sid
+        }
+    }
+}
+
+#[cfg(windows)]
 fn open_descriptor(path: &Path) -> Result<File, TransportError> {
     use std::mem::{size_of, zeroed};
     use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
     use std::os::windows::io::AsRawHandle;
     use std::ptr::{addr_of, addr_of_mut, null_mut};
 
-    use windows_sys::Win32::Foundation::{
-        CloseHandle, GENERIC_ALL, GENERIC_READ, HANDLE, LocalFree,
-    };
+    use windows_sys::Win32::Foundation::{GENERIC_ALL, GENERIC_READ, HANDLE, LocalFree};
     use windows_sys::Win32::Security::Authorization::{GetSecurityInfo, SE_FILE_OBJECT};
     use windows_sys::Win32::Security::{
         ACCESS_ALLOWED_ACE, ACL, ACL_SIZE_INFORMATION, AclSizeInformation, CreateWellKnownSid,
-        DACL_SECURITY_INFORMATION, EqualSid, GetAce, GetAclInformation, GetTokenInformation,
-        OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, SECURITY_MAX_SID_SIZE, TOKEN_QUERY,
-        TOKEN_USER, TokenUser, WinBuiltinAdministratorsSid, WinLocalSystemSid,
+        DACL_SECURITY_INFORMATION, EqualSid, GetAce, GetAclInformation, OWNER_SECURITY_INFORMATION,
+        PSECURITY_DESCRIPTOR, PSID, SECURITY_MAX_SID_SIZE, WinBuiltinAdministratorsSid,
+        WinLocalSystemSid,
     };
     use windows_sys::Win32::Storage::FileSystem::{
         FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_DATA,
@@ -158,7 +215,7 @@ fn open_descriptor(path: &Path) -> Result<File, TransportError> {
         ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE, ACCESS_ALLOWED_COMPOUND_ACE_TYPE,
         ACCESS_ALLOWED_OBJECT_ACE_TYPE,
     };
-    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
 
     fn well_known_sid(kind: i32) -> Result<Vec<usize>, TransportError> {
         let mut buffer =
@@ -184,32 +241,8 @@ fn open_descriptor(path: &Path) -> Result<File, TransportError> {
         return Err(TransportError::InvalidDescriptor);
     }
 
-    let mut token: HANDLE = null_mut();
-    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
-        return Err(TransportError::InvalidDescriptor);
-    }
-    let mut required = 0;
-    unsafe { GetTokenInformation(token, TokenUser, null_mut(), 0, &mut required) };
-    if required < size_of::<TOKEN_USER>() as u32 {
-        unsafe { CloseHandle(token) };
-        return Err(TransportError::InvalidDescriptor);
-    }
-    let mut token_buffer = vec![0_usize; (required as usize).div_ceil(size_of::<usize>())];
-    if unsafe {
-        GetTokenInformation(
-            token,
-            TokenUser,
-            token_buffer.as_mut_ptr().cast(),
-            required,
-            &mut required,
-        )
-    } == 0
-    {
-        unsafe { CloseHandle(token) };
-        return Err(TransportError::InvalidDescriptor);
-    }
-    unsafe { CloseHandle(token) };
-    let user_sid = unsafe { (*token_buffer.as_ptr().cast::<TOKEN_USER>()).User.Sid };
+    let user = ProcessUser::read(unsafe { GetCurrentProcess() })?;
+    let user_sid = user.sid();
 
     let system_sid = well_known_sid(WinLocalSystemSid)?;
     let administrators_sid = well_known_sid(WinBuiltinAdministratorsSid)?;
@@ -345,6 +378,46 @@ fn descriptor_is_current(descriptor: &EndpointDescriptor, now: u64) -> bool {
 }
 
 #[cfg(unix)]
+fn validate_unix_peer(
+    stream: &std::os::unix::net::UnixStream,
+    expected_uid: libc::uid_t,
+) -> Result<(), TransportError> {
+    use std::os::fd::AsRawFd;
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    let uid = {
+        let mut credentials: libc::ucred = unsafe { std::mem::zeroed() };
+        let mut size = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+        if unsafe {
+            libc::getsockopt(
+                stream.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_PEERCRED,
+                (&mut credentials as *mut libc::ucred).cast(),
+                &mut size,
+            )
+        } != 0
+            || size as usize != std::mem::size_of::<libc::ucred>()
+        {
+            return Err(TransportError::InvalidDescriptor);
+        }
+        credentials.uid
+    };
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    let uid = {
+        let mut uid = 0;
+        let mut gid = 0;
+        if unsafe { libc::getpeereid(stream.as_raw_fd(), &mut uid, &mut gid) } != 0 {
+            return Err(TransportError::InvalidDescriptor);
+        }
+        uid
+    };
+    if uid != expected_uid {
+        return Err(TransportError::InvalidDescriptor);
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
 fn connect(endpoint: &Endpoint) -> Result<Box<dyn ReadWrite>, TransportError> {
     use std::os::unix::fs::{FileTypeExt, MetadataExt};
     use std::os::unix::net::UnixStream;
@@ -363,6 +436,7 @@ fn connect(endpoint: &Endpoint) -> Result<Box<dyn ReadWrite>, TransportError> {
         return Err(TransportError::InvalidDescriptor);
     }
     let stream = UnixStream::connect(path).map_err(|_| TransportError::AppUnavailable)?;
+    validate_unix_peer(&stream, unsafe { libc::geteuid() })?;
     stream
         .set_read_timeout(Some(Duration::from_secs(3)))
         .map_err(|_| TransportError::AppUnavailable)?;
@@ -373,7 +447,35 @@ fn connect(endpoint: &Endpoint) -> Result<Box<dyn ReadWrite>, TransportError> {
 }
 
 #[cfg(windows)]
+fn validate_pipe_server(
+    pipe: &File,
+    user_sid: windows_sys::Win32::Security::PSID,
+) -> Result<(), TransportError> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::Security::EqualSid;
+    use windows_sys::Win32::System::Pipes::GetNamedPipeServerProcessId;
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    let mut server_id = 0;
+    if unsafe { GetNamedPipeServerProcessId(pipe.as_raw_handle(), &mut server_id) } == 0 {
+        return Err(TransportError::InvalidDescriptor);
+    }
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, server_id) };
+    if process.is_null() {
+        return Err(TransportError::InvalidDescriptor);
+    }
+    let process = unsafe { OwnedHandle::from_raw_handle(process) };
+    let server = ProcessUser::read(process.as_raw_handle())?;
+    if unsafe { EqualSid(server.sid(), user_sid) } == 0 {
+        return Err(TransportError::InvalidDescriptor);
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
 fn connect(endpoint: &Endpoint) -> Result<Box<dyn ReadWrite>, TransportError> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{SECURITY_IDENTIFICATION, SECURITY_SQOS_PRESENT};
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
     let Endpoint::WindowsNamedPipe { name } = endpoint else {
         return Err(TransportError::InvalidDescriptor);
     };
@@ -386,8 +488,11 @@ fn connect(endpoint: &Endpoint) -> Result<Box<dyn ReadWrite>, TransportError> {
     let pipe = OpenOptions::new()
         .read(true)
         .write(true)
+        .custom_flags(SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION)
         .open(name)
         .map_err(|_| TransportError::AppUnavailable)?;
+    let user = ProcessUser::read(unsafe { GetCurrentProcess() })?;
+    validate_pipe_server(&pipe, user.sid())?;
     Ok(Box::new(pipe))
 }
 
@@ -475,6 +580,110 @@ mod tests {
             transport.send(&request),
             Err(TransportError::AppUnavailable)
         ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn named_pipe_server_must_belong_to_the_expected_user() {
+        use std::mem::size_of;
+        use std::os::windows::io::FromRawHandle;
+        use std::ptr::null_mut;
+        use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+        use windows_sys::Win32::Security::{
+            CreateWellKnownSid, SECURITY_MAX_SID_SIZE, WinWorldSid,
+        };
+        use windows_sys::Win32::Storage::FileSystem::PIPE_ACCESS_DUPLEX;
+        use windows_sys::Win32::System::Pipes::CreateNamedPipeW;
+        use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+        let name = format!(
+            r"\\.\pipe\winotp-reborn-browser-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let encoded: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
+        let raw = unsafe {
+            CreateNamedPipeW(
+                encoded.as_ptr(),
+                PIPE_ACCESS_DUPLEX,
+                0,
+                1,
+                1024,
+                1024,
+                1000,
+                null_mut(),
+            )
+        };
+        assert_ne!(raw, INVALID_HANDLE_VALUE);
+        let server = unsafe { File::from_raw_handle(raw) };
+        let client = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&name)
+            .unwrap();
+        let user = ProcessUser::read(unsafe { GetCurrentProcess() }).unwrap();
+        assert!(validate_pipe_server(&client, user.sid()).is_ok());
+
+        let mut other_sid =
+            vec![0_usize; (SECURITY_MAX_SID_SIZE as usize).div_ceil(size_of::<usize>())];
+        let mut size = SECURITY_MAX_SID_SIZE;
+        assert_ne!(
+            unsafe {
+                CreateWellKnownSid(
+                    WinWorldSid,
+                    null_mut(),
+                    other_sid.as_mut_ptr().cast(),
+                    &mut size,
+                )
+            },
+            0
+        );
+        assert!(matches!(
+            validate_pipe_server(&client, other_sid.as_mut_ptr().cast()),
+            Err(TransportError::InvalidDescriptor)
+        ));
+        drop(client);
+        drop(server);
+        let file = File::open(std::env::current_exe().unwrap()).unwrap();
+        assert!(matches!(
+            validate_pipe_server(&file, user.sid()),
+            Err(TransportError::InvalidDescriptor)
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn connected_unix_peer_must_belong_to_the_expected_user() {
+        let (client, _server) = std::os::unix::net::UnixStream::pair().unwrap();
+        let uid = unsafe { libc::geteuid() };
+        assert!(validate_unix_peer(&client, uid).is_ok());
+        assert!(matches!(
+            validate_unix_peer(&client, uid.wrapping_add(1)),
+            Err(TransportError::InvalidDescriptor)
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn descriptor_fifo_is_rejected_without_waiting_for_a_writer() {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+        let path = std::env::temp_dir().join(format!(
+            "winotp-fifo-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let encoded = CString::new(path.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(encoded.as_ptr(), 0o600) }, 0);
+        let result = read_descriptor(&path);
+        fs::remove_file(&path).unwrap();
+        assert!(matches!(result, Err(TransportError::InvalidDescriptor)));
     }
 
     #[cfg(unix)]

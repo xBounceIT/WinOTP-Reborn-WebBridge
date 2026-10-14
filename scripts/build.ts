@@ -86,6 +86,17 @@ async function buildTarget(target: BrowserTarget): Promise<void> {
       target: browserTarget,
       legalComments: "none",
     }),
+    build({
+      entryPoints: [path.join(repositoryRoot, "src", "content", "main.ts")],
+      outfile: path.join(targetDirectory, "overlay.js"),
+      bundle: true,
+      loader: { ".css": "text" },
+      format: "iife",
+      minify: true,
+      platform: "browser",
+      target: browserTarget,
+      legalComments: "none",
+    }),
     copyFile(
       path.join(repositoryRoot, "public", "third-party-licenses.txt"),
       path.join(targetDirectory, "third-party-licenses.txt"),

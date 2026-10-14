@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { createAmoJwt } from "./amo-auth.ts";
 import { validateExtensionArchive } from "./extension-archive.ts";
@@ -37,7 +36,11 @@ export function assertAmoSubmission(response: JsonObject, extensionGuid: string)
 }
 
 export async function publishFirefox(options: FirefoxPublicationOptions): Promise<string> {
-  await validateExtensionArchive(options.archive, "firefox", options.expectedVersion);
+  const archive = await validateExtensionArchive(
+    options.archive,
+    "firefox",
+    options.expectedVersion,
+  );
   const sourceArchive = await validateFirefoxSourceArchive(
     options.sourceArchive,
     options.expectedVersion,
@@ -75,7 +78,7 @@ export async function publishFirefox(options: FirefoxPublicationOptions): Promis
   form.set("channel", "listed");
   form.set(
     "upload",
-    new Blob([await readFile(options.archive)], { type: "application/zip" }),
+    new Blob([archive], { type: "application/zip" }),
     path.basename(options.archive),
   );
 
@@ -118,7 +121,7 @@ export async function publishFirefox(options: FirefoxPublicationOptions): Promis
   const sourceForm = new FormData();
   sourceForm.set(
     "source",
-    new Blob([Uint8Array.from(sourceArchive)], { type: "application/zip" }),
+    new Blob([sourceArchive], { type: "application/zip" }),
     path.basename(options.sourceArchive),
   );
   await amoFetch(

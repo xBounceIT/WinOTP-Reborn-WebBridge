@@ -1,8 +1,7 @@
 import type { TotpResult } from "../shared/protocol.ts";
-import { NativeTransportError } from "../shared/transport.ts";
 import { getRuntime } from "../shared/webextension.ts";
 import { createGateway } from "./gateway.ts";
-import { capturePage, QrImportError, readQrImage, sendQr } from "./scan.ts";
+import { pageMessage, pageScanError } from "../shared/page-scan.ts";
 import {
   filterAccounts,
   loadPopup,
@@ -18,12 +17,12 @@ const root: HTMLElement = appRoot;
 const gateway = createGateway(getRuntime());
 let state: PopupState = { kind: "connecting" };
 let query = "";
-let activeCode: Readonly<{ accountId: string; result: TotpResult; expiresAt: number }> | undefined;
+let activeCode:
+  | Readonly<{ accountId: string; result: TotpResult; expiresAt: number; wallExpiresAt: number }>
+  | undefined;
 let timer: number | undefined;
 let refreshGeneration = 0;
 let codeGeneration = 0;
-const imageScanPage = globalThis.location?.search === "?scan=image";
-if (imageScanPage) document.body?.classList.add("image-scan-page");
 let scanBusy = false;
 let scanMessage = "";
 
@@ -38,6 +37,18 @@ function clearActiveCode(): void {
   activeCode = undefined;
   if (timer !== undefined) window.clearInterval(timer);
   timer = undefined;
+}
+
+function codeSecondsRemaining(): number {
+  if (!activeCode) return 0;
+  // A monotonic clock covers clock corrections; wall time also covers OS sleep.
+  return Math.max(
+    0,
+    Math.ceil(
+      Math.min(activeCode.expiresAt - performance.now(), activeCode.wallExpiresAt - Date.now()) /
+        1000,
+    ),
+  );
 }
 
 function escapeHtml(value: string): string {
@@ -133,7 +144,7 @@ function accountView(readyState: ReadyState): string {
   const list = accounts
     .map((account) => {
       const code = activeCode?.accountId === account.id ? activeCode : undefined;
-      const remaining = code ? Math.max(0, Math.ceil((code.expiresAt - Date.now()) / 1000)) : 0;
+      const remaining = code ? codeSecondsRemaining() : 0;
       const progress = code ? Math.max(0, Math.min(1, remaining / code.result.period)) : 0;
       const issuer = account.issuer.trim();
       const identity = `<span class="account__issuer">${escapeHtml(issuer || account.name)}</span>
@@ -163,14 +174,9 @@ function accountView(readyState: ReadyState): string {
   return `<section class="accounts">
     <section class="scan" aria-label="Scan an authenticator QR code">
       <div class="scan__actions">
-        ${
-          imageScanPage
-            ? `<label class="scan__file">Choose QR image<input type="file" data-qr-file accept="image/png,image/jpeg,image/webp" ${scanBusy ? "disabled" : ""}></label>`
-            : `<button class="button" data-scan-page ${scanBusy ? "disabled" : ""}>Scan page QR</button>
-             <button class="button" data-scan-image ${scanBusy ? "disabled" : ""}>Scan image…</button>`
-        }
+        <button class="button" data-scan-page ${scanBusy ? "disabled" : ""}>Select QR area…</button>
       </div>
-      <p class="scan__message" role="status" aria-live="polite">${escapeHtml(scanMessage || "Scan a QR code, then review the import in WinOTP.")}</p>
+      <p class="scan__message" role="status" aria-live="polite">${escapeHtml(scanMessage || "Select an area around a QR code, then review the import in WinOTP.")}</p>
     </section>
     <label class="search">
       <span class="sr-only">Search accounts</span>
@@ -207,16 +213,7 @@ function render(): void {
     ?.addEventListener("click", () => void refresh());
   const search = root.querySelector<HTMLInputElement>("[data-search]");
   root.querySelector<HTMLButtonElement>("[data-scan-page]")?.addEventListener("click", () => {
-    void scan(capturePage);
-  });
-  root.querySelector<HTMLButtonElement>("[data-scan-image]")?.addEventListener("click", () => {
-    window.open("popup.html?scan=image", "_blank");
-  });
-  const fileInput = root.querySelector<HTMLInputElement>("[data-qr-file]");
-  fileInput?.addEventListener("change", () => {
-    const file = fileInput.files?.[0];
-    fileInput.value = "";
-    if (file) void scan(async () => file);
+    void scan();
   });
   search?.addEventListener("input", () => {
     query = search.value;
@@ -234,35 +231,22 @@ function render(): void {
   });
 }
 
-async function scan(source: () => Promise<Blob>): Promise<void> {
+async function scan(): Promise<void> {
   if (scanBusy || state.kind !== "ready") return;
   scanBusy = true;
   codeGeneration += 1;
   clearActiveCode();
-  scanMessage = "Scanning…";
+  scanMessage = "Opening page overlay…";
   render();
   try {
-    const text = await readQrImage(await source());
-    scanMessage = "Sending to WinOTP…";
-    render();
-    await sendQr(gateway, text);
-    scanMessage =
-      "QR sent. Review and confirm the import in WinOTP, then reopen the extension to refresh accounts.";
+    const reply = await pageMessage(getRuntime(), { kind: "qr-start" });
+    const error = pageScanError(reply);
+    if (error) throw new Error(error);
+    if (!reply || typeof reply !== "object" || !("ok" in reply) || reply.ok !== true)
+      throw new Error("Could not show the selection overlay. Try again.");
+    window.close();
   } catch (error) {
-    scanMessage =
-      error instanceof NativeTransportError
-        ? "Could not confirm delivery. Check WinOTP for a pending import before scanning again."
-        : error instanceof Error
-          ? error.message
-          : "Could not scan the QR code. Try again.";
-    if (
-      (error instanceof NativeTransportError ||
-        (error instanceof QrImportError &&
-          (error.code === "APP_LOCKED" || error.code === "APP_NOT_RUNNING"))) &&
-      state.kind === "ready"
-    ) {
-      state = stateForTotpError(error, state);
-    }
+    scanMessage = error instanceof Error ? error.message : "Could not open area selection.";
   } finally {
     scanBusy = false;
     render();
@@ -286,10 +270,20 @@ async function revealCode(accountId: string | undefined): Promise<void> {
   if (!accountId || state.kind !== "ready" || scanBusy) return;
   const generation = ++codeGeneration;
   const readyState = state;
+  const requestedAt = performance.now();
+  const requestedWallTime = Date.now();
   try {
     const result = await requestTotp(gateway, accountId);
     if (generation !== codeGeneration || state !== readyState) return;
-    activeCode = { accountId, result, expiresAt: Date.now() + result.expiresIn * 1000 };
+    const expiresAt = requestedAt + result.expiresIn * 1000;
+    const wallExpiresAt = requestedWallTime + result.expiresIn * 1000;
+    if (expiresAt <= performance.now() || wallExpiresAt <= Date.now()) {
+      clearActiveCode();
+      render();
+      showToast("Code expired before it arrived. Select the account again.");
+      return;
+    }
+    activeCode = { accountId, result, expiresAt, wallExpiresAt };
     if (timer !== undefined) window.clearInterval(timer);
     timer = window.setInterval(updateCountdown, 250);
     render();
@@ -303,8 +297,8 @@ async function revealCode(accountId: string | undefined): Promise<void> {
 
 function updateCountdown(): void {
   if (!activeCode) return;
-  const remaining = Math.max(0, Math.ceil((activeCode.expiresAt - Date.now()) / 1000));
-  if (remaining === 0 && Date.now() >= activeCode.expiresAt) {
+  const remaining = codeSecondsRemaining();
+  if (remaining === 0) {
     clearActiveCode();
     render();
     return;
@@ -320,9 +314,22 @@ function updateCountdown(): void {
 }
 
 async function copyCode(code: string): Promise<void> {
-  await navigator.clipboard.writeText(code);
+  if (!activeCode || activeCode.result.code !== code || codeSecondsRemaining() === 0) {
+    updateCountdown();
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(code);
+    showToast("Code copied");
+  } catch {
+    showToast("Could not copy code. Try again.");
+  }
+}
+
+function showToast(message: string): void {
   const toast = root.querySelector<HTMLElement>(".toast");
   if (!toast) return;
+  toast.textContent = message;
   toast.hidden = false;
   window.setTimeout(() => {
     toast.hidden = true;

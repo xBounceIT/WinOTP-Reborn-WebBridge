@@ -3,7 +3,7 @@
   "name": "WinOTP Reborn",
   "short_name": "WinOTP",
   "description": "Securely request TOTP codes from the local WinOTP Reborn desktop app.",
-  "permissions": ["nativeMessaging", "activeTab"],
+  "permissions": ["nativeMessaging", "activeTab", "scripting"],
   "action": {
     "default_title": "WinOTP Reborn",
     "default_popup": "popup.html",

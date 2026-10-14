@@ -93,6 +93,8 @@ export function isValidId(value: unknown): value is string {
   return typeof value === "string" && ID_PATTERN.test(value);
 }
 
+let pageRequestSequence = 0;
+
 export function createRequest(method: "ping" | "getStatus" | "listAccounts"): NativeRequest;
 export function createRequest(method: "getTotp", params: { accountId: string }): NativeRequest;
 export function createRequest(method: "importQr", params: { text: string }): NativeRequest;
@@ -100,7 +102,12 @@ export function createRequest(
   method: NativeRequest["method"],
   params?: { accountId: string } | { text: string },
 ): NativeRequest {
-  const requestId = crypto.randomUUID();
+  // HTTP page contexts may not expose randomUUID. These IDs only correlate replies;
+  // authentication remains in Native Messaging and the desktop IPC boundary.
+  const requestId =
+    typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `page-${Date.now().toString(36)}-${++pageRequestSequence}`;
   if (method === "getTotp") {
     if (!params || !("accountId" in params) || !isValidId(params.accountId)) {
       throw new TypeError("A valid account ID is required");

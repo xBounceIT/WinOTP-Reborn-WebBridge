@@ -1,5 +1,9 @@
+import assert from "node:assert/strict";
+import { readFile, writeFile } from "node:fs/promises";
+
 const mode = process.env.WINOTP_TEST_STORE;
 let requestIndex = 0;
+let validatedArchive: Buffer | undefined;
 
 function jsonResponse(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -16,9 +20,14 @@ globalThis.fetch = async (input, init) => {
   if (mode === "chrome") {
     const extensionId = process.env.CHROME_EXTENSION_ID;
     if (requestIndex === 1 && url === "https://oauth2.googleapis.com/token" && method === "POST") {
+      if (process.env.CHROME_EXTENSION_ZIP) {
+        validatedArchive = await readFile(process.env.CHROME_EXTENSION_ZIP);
+        await writeFile(process.env.CHROME_EXTENSION_ZIP, "replaced after validation");
+      }
       return jsonResponse({ access_token: "test-access-token" });
     }
     if (requestIndex === 2 && url.endsWith(":upload") && method === "POST") {
+      if (validatedArchive) assert.deepEqual(init?.body, validatedArchive);
       return jsonResponse({
         itemId: extensionId,
         uploadState: "SUCCEEDED",

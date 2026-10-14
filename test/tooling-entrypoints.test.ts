@@ -44,6 +44,12 @@ test("builds and validates both extension distributions", async () => {
   assert.match(validationOutput, /Validated dist\/chrome\/manifest\.json/u);
   assert.match(validationOutput, /Validated dist\/firefox\/manifest\.json/u);
 
+  // QR decoding belongs to the page overlay, not the account popup's startup path.
+  for (const target of ["chrome", "firefox"]) {
+    const popup = await readFile(path.join(repositoryRoot, "dist", target, "popup.js"));
+    assert.ok(popup.byteLength < 50 * 1024, `${target} account popup exceeded its 50 KiB budget`);
+  }
+
   await assert.rejects(runScript("scripts/build.ts", ["invalid"]), /Usage: node scripts\/build/u);
   await assert.rejects(
     runScript("scripts/validate-manifests.ts", ["invalid"]),
@@ -61,35 +67,46 @@ test("verifies matching release tags and rejects missing tags", async () => {
 
 test("runs store publication entrypoints against local fetch doubles", async () => {
   const extensionId = "abcdefghijklmnopabcdefghijklmnop";
+  const directory = await mkdtemp(path.join(tmpdir(), "winotp-publish-snapshot-"));
+  const archive = path.join(directory, "chrome.zip");
+  try {
+    await writeFile(
+      archive,
+      await readFile(path.join(repositoryRoot, "dist", "winotp-reborn-1.1.0-chrome.zip")),
+    );
 
-  const chromeOutput = await runScript(
-    "scripts/publish-chrome.ts",
-    [],
-    {
-      ...process.env,
-      CHROME_CLIENT_ID: "test-client",
-      CHROME_CLIENT_SECRET: "test-secret",
-      CHROME_EXTENSION_ID: extensionId,
-      CHROME_PUBLISHER_ID: "test-publisher",
-      CHROME_REFRESH_TOKEN: "test-refresh-token",
-      WINOTP_TEST_STORE: "chrome",
-    },
-    ["--import", storePreload],
-  );
-  assert.match(chromeOutput, /Chrome Web Store submission state: PUBLISHED/u);
+    const chromeOutput = await runScript(
+      "scripts/publish-chrome.ts",
+      [],
+      {
+        ...process.env,
+        CHROME_CLIENT_ID: "test-client",
+        CHROME_CLIENT_SECRET: "test-secret",
+        CHROME_EXTENSION_ID: extensionId,
+        CHROME_PUBLISHER_ID: "test-publisher",
+        CHROME_REFRESH_TOKEN: "test-refresh-token",
+        CHROME_EXTENSION_ZIP: archive,
+        WINOTP_TEST_STORE: "chrome",
+      },
+      ["--import", storePreload],
+    );
+    assert.match(chromeOutput, /Chrome Web Store submission state: PUBLISHED/u);
 
-  const firefoxOutput = await runScript(
-    "scripts/publish-firefox.ts",
-    [],
-    {
-      ...process.env,
-      AMO_JWT_ISSUER: "test-issuer",
-      AMO_JWT_SECRET: "test-secret",
-      WINOTP_TEST_STORE: "firefox",
-    },
-    ["--import", storePreload],
-  );
-  assert.match(firefoxOutput, /Firefox AMO submission state: nominated/u);
+    const firefoxOutput = await runScript(
+      "scripts/publish-firefox.ts",
+      [],
+      {
+        ...process.env,
+        AMO_JWT_ISSUER: "test-issuer",
+        AMO_JWT_SECRET: "test-secret",
+        WINOTP_TEST_STORE: "firefox",
+      },
+      ["--import", storePreload],
+    );
+    assert.match(firefoxOutput, /Firefox AMO submission state: nominated/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("generates allow-listed native host manifests without installing them", async () => {

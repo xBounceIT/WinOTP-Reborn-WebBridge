@@ -197,3 +197,22 @@ test("handles failures at every popup loading stage", async () => {
     appVersion: "2.0.1",
   });
 });
+
+test("preserves specific transport errors after ping and status", async () => {
+  for (const stage of ["getStatus", "listAccounts"]) {
+    for (const [reason, kind] of [
+      ["HOST_UNAVAILABLE", "host-missing"],
+      ["UNSUPPORTED_PROTOCOL", "incompatible"],
+    ] as const) {
+      const state = await loadPopup(
+        gateway((request) => {
+          if (request.method === stage) throw new NativeTransportError(reason);
+          if (request.method === "ping")
+            return response(request, { protocolVersion: 1, bridgeVersion: "0.1.0" });
+          return response(request, { state: "unlocked", appVersion: "2.0.1" });
+        }),
+      );
+      assert.equal(state.kind, kind);
+    }
+  }
+});

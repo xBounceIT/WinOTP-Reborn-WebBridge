@@ -1,3 +1,6 @@
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+export const MAX_IMAGE_PIXELS = 16 * 1024 * 1024;
+
 // Inspect encoded headers before the browser allocates decoded pixels.
 // PNG: https://www.w3.org/TR/png-3/#11IHDR
 // JPEG: https://www.w3.org/Graphics/JPEG/itu-t81.pdf (B.2.2)
@@ -5,12 +8,14 @@
 export function validateImageHeader(bytes: Uint8Array, type: string, maxPixels: number): void {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const invalid = (): never => {
-    throw new Error("Could not read image dimensions. Choose a static PNG, JPEG or WebP image.");
+    throw new Error(
+      "Could not read the page capture dimensions. Reopen the extension and try again.",
+    );
   };
   const dimensions = (width: number, height: number): void => {
     if (!width || !height) invalid();
     if (width * height > maxPixels) {
-      throw new Error("Image is too large. Crop it around the QR code and try again.");
+      throw new Error("Page image is too large. Try a smaller browser window.");
     }
   };
   const matches = (offset: number, value: string): boolean =>

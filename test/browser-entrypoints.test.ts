@@ -48,14 +48,16 @@ async function nextTurn(): Promise<void> {
 test("runs the popup and background entrypoints against browser-compatible APIs", async () => {
   const descriptors = new Map<string, PropertyDescriptor | undefined>();
   let now = 1_000;
+  let wallOffset = 0;
   const originalNow = Date.now;
+  let totpDelay = 0;
+  let clipboardFails = false;
   const listeners = new Map<string, Listener>();
   let intervalListener: (() => void) | undefined;
   let timeoutListener: (() => void) | undefined;
   let markup = "";
   let copiedCode = "";
   const popupRequests: string[] = [];
-  let openedPage = "";
   let popupMode:
     | "host-missing"
     | "app-not-running"
@@ -101,11 +103,6 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
       listeners.set("scan-page", listener);
     },
   };
-  const scanImageButton = {
-    addEventListener(_type: string, listener: Listener) {
-      listeners.set("scan-image", listener);
-    },
-  };
   const countdown = {
     textContent: "",
     label: "",
@@ -114,7 +111,7 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
       this.label = value;
     },
   };
-  const toast = { hidden: true };
+  const toast = { hidden: true, textContent: "" };
   const root = {
     get innerHTML() {
       return markup;
@@ -125,8 +122,6 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
     querySelector(selector: string): unknown {
       if (selector === "[data-scan-page]" && markup.includes("data-scan-page"))
         return scanPageButton;
-      if (selector === "[data-scan-image]" && markup.includes("data-scan-image"))
-        return scanImageButton;
       if (selector === "[data-action='retry']" && markup.includes('data-action="retry"'))
         return retryButton;
       if (selector === "[data-search]" && markup.includes("data-search")) return search;
@@ -152,6 +147,15 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
       throw new Error("unused");
     },
     sendMessage(message, callback) {
+      if (
+        message &&
+        typeof message === "object" &&
+        "kind" in message &&
+        message.kind === "qr-start"
+      ) {
+        callback({ error: "Page scanning is unavailable in this browser." });
+        return;
+      }
       const request = message as NativeRequest;
       popupRequests.push(request.method);
       if (popupMode === "incompatible") {
@@ -214,12 +218,14 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
         });
         return;
       }
+      if (request.method === "getTotp") now += totpDelay;
       callback({ kind: "native-response", response: nativeResponse(request) });
     },
   };
 
   try {
-    Date.now = () => now;
+    Date.now = () => now + wallOffset;
+    descriptors.set("performance", setGlobal("performance", { now: () => now }));
     descriptors.set("browser", Object.getOwnPropertyDescriptor(globalThis, "browser"));
     descriptors.set("chrome", setGlobal("chrome", { runtime: popupRuntime }));
     descriptors.set(
@@ -233,9 +239,6 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
     descriptors.set(
       "window",
       setGlobal("window", {
-        open(url: string) {
-          openedPage = url;
-        },
         clearInterval() {
           intervalListener = undefined;
         },
@@ -254,6 +257,7 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
       setGlobal("navigator", {
         clipboard: {
           async writeText(value: string) {
+            if (clipboardFails) throw new Error("denied");
             copiedCode = value;
           },
         },
@@ -313,12 +317,11 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
     await nextTurn();
     assert.match(markup, /connection--ready">Connected<\/p>/u);
     assert.match(markup, /data-scan-page/);
-    assert.match(markup, /data-scan-image/);
-    listeners.get("scan-image")?.();
-    assert.equal(openedPage, "popup.html?scan=image");
+    assert.doesNotMatch(markup, /data-scan-image|data-qr-file|type="file"/);
+    assert.match(markup, /Select QR area/);
     listeners.get("scan-page")?.();
     await nextTurn();
-    assert.match(markup, /Page capture is unavailable/);
+    assert.match(markup, /Page scanning is unavailable/);
     assert.doesNotMatch(markup, /WinOTP connected|connection--ready"><i>/u);
     assert.match(markup, /Issuer &amp; Co/u);
     assert.match(markup, /&lt;user&gt;/u);
@@ -353,9 +356,49 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
     timeoutListener?.();
     assert.equal(toast.hidden, true);
 
+    clipboardFails = true;
+    listeners.get("copy")?.({ currentTarget: copyButton });
+    await nextTurn();
+    assert.equal(toast.textContent, "Could not copy code. Try again.");
+    clipboardFails = false;
+
     now += 29_000;
+    copiedCode = "";
+    listeners.get("copy")?.({ currentTarget: copyButton });
+    await nextTurn();
+    assert.equal(copiedCode, "");
     intervalListener?.();
     assert.doesNotMatch(markup, /account--revealed/u);
+
+    totpDelay = 4_000;
+    listeners.get("reveal")?.();
+    await nextTurn();
+    intervalListener?.();
+    assert.equal(countdown.textContent, "26s");
+    now += 26_000;
+    intervalListener?.();
+    totpDelay = 31_000;
+    listeners.get("reveal")?.();
+    await nextTurn();
+    assert.doesNotMatch(markup, /data-copy-code/u);
+    assert.equal(toast.textContent, "Code expired before it arrived. Select the account again.");
+    totpDelay = 0;
+
+    listeners.get("reveal")?.();
+    await nextTurn();
+    wallOffset += 31_000;
+    listeners.get("copy")?.({ currentTarget: copyButton });
+    await nextTurn();
+    assert.equal(copiedCode, "");
+    assert.doesNotMatch(markup, /data-copy-code/u);
+    wallOffset = 0;
+    listeners.get("reveal")?.();
+    await nextTurn();
+    wallOffset -= 60_000;
+    now += 30_000;
+    intervalListener?.();
+    assert.doesNotMatch(markup, /data-copy-code/u);
+    wallOffset = 0;
 
     popupMode = "account-not-found";
     listeners.get("reveal")?.();
@@ -467,6 +510,49 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
       },
     });
     assert.doesNotMatch(JSON.stringify(importReply), /otpauth|secret|TEST/);
+
+    const pageSender = {
+      id: "extension-id",
+      frameId: 0,
+      url: "https://example.test/setup",
+      tab: { id: 10, windowId: 7 },
+    };
+    for (const pageRequest of [
+      createRequest("listAccounts"),
+      createRequest("getTotp", { accountId: "account-1" }),
+      importRequest,
+      { kind: "qr-import", request: createRequest("listAccounts") },
+      { kind: "qr-start" },
+    ]) {
+      let reply: unknown = "not called";
+      assert.equal(
+        backgroundListener?.(pageRequest, pageSender, (value) => {
+          reply = value;
+        }),
+        undefined,
+      );
+      assert.equal(reply, undefined);
+    }
+    let frameReply: unknown = "not called";
+    assert.equal(
+      backgroundListener?.(
+        { kind: "qr-import", request: importRequest },
+        { ...pageSender, frameId: 1 },
+        (reply) => {
+          frameReply = reply;
+        },
+      ),
+      undefined,
+    );
+    assert.equal(frameReply, undefined);
+    const scopedImport = await new Promise<unknown>((resolve) => {
+      assert.equal(
+        backgroundListener?.({ kind: "qr-import", request: importRequest }, pageSender, resolve),
+        true,
+      );
+    });
+    assert.deepEqual(scopedImport, importReply);
+    assert.doesNotMatch(JSON.stringify(scopedImport), /secret|otpauth|TEST/);
 
     nativeMode = "disconnect";
     const failedReply = await new Promise<unknown>((resolve) => {

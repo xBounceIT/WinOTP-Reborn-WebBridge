@@ -120,11 +120,11 @@ pub fn parse_request(body: &[u8]) -> Result<NativeRequest, RequestError> {
     let object = value
         .as_object()
         .ok_or_else(|| invalid(INVALID_REQUEST_ID, "Request must be an object"))?;
-    let request_id = object
+    let valid_request_id = object
         .get("requestId")
         .and_then(Value::as_str)
-        .filter(|value| valid_id(value))
-        .unwrap_or(INVALID_REQUEST_ID);
+        .filter(|value| valid_id(value));
+    let request_id = valid_request_id.unwrap_or(INVALID_REQUEST_ID);
 
     let version = object
         .get("version")
@@ -138,7 +138,7 @@ pub fn parse_request(body: &[u8]) -> Result<NativeRequest, RequestError> {
         });
     }
 
-    if request_id == INVALID_REQUEST_ID {
+    if valid_request_id.is_none() {
         return Err(invalid(request_id, "Invalid request ID"));
     }
     let method = object
@@ -410,6 +410,9 @@ mod tests {
 
     #[test]
     fn parses_all_supported_methods() {
+        let sentinel_id =
+            parse(json!({"version": 1, "requestId": "invalid-request", "method": "ping"})).unwrap();
+        assert_eq!(sentinel_id.request_id, "invalid-request");
         for (method, expected) in [
             ("ping", RequestMethod::Ping),
             ("getStatus", RequestMethod::GetStatus),

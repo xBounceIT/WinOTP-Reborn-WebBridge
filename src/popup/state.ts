@@ -43,50 +43,46 @@ function stateForError(code: string, bridgeVersion?: string, appVersion?: string
   return { kind: "error" };
 }
 
-function stateForTransportError(error: NativeTransportError): PopupState {
-  if (error.reason === "HOST_UNAVAILABLE") return { kind: "host-missing" };
-  if (error.reason === "UNSUPPORTED_PROTOCOL") return { kind: "incompatible" };
+function stateForTransportError(error: unknown): PopupState {
+  if (error instanceof NativeTransportError) {
+    if (error.reason === "HOST_UNAVAILABLE") return { kind: "host-missing" };
+    if (error.reason === "UNSUPPORTED_PROTOCOL") return { kind: "incompatible" };
+  }
   return { kind: "connection-error" };
 }
 
 export async function loadPopup(gateway: NativeGateway): Promise<PopupState> {
-  let ping: NativeResponse<PingResult>;
   try {
-    ping = await gateway.request<PingResult>(createRequest("ping"));
-  } catch (error) {
-    if (error instanceof NativeTransportError) return stateForTransportError(error);
-    return { kind: "connection-error" };
-  }
-  if (!ping.ok) return stateForError(ping.error.code);
+    const ping = await gateway.request<PingResult>(createRequest("ping"));
+    if (!ping.ok) return stateForError(ping.error.code);
 
-  const bridgeVersion = ping.result.bridgeVersion;
-  const status = await gateway
-    .request<StatusResult>(createRequest("getStatus"))
-    .catch(() => undefined);
-  if (!status) return { kind: "connection-error" };
-  if (!status.ok) return stateForError(status.error.code, bridgeVersion);
-  if (status.result.state === "locked") {
+    const bridgeVersion = ping.result.bridgeVersion;
+    const status = await gateway.request<StatusResult>(createRequest("getStatus"));
+    if (!status.ok) return stateForError(status.error.code, bridgeVersion);
+    if (status.result.state === "locked") {
+      return {
+        kind: "locked",
+        bridgeVersion,
+        appVersion: status.result.appVersion,
+      };
+    }
+
+    const accounts = await gateway.request<{ accounts: readonly BrowserAccount[] }>(
+      createRequest("listAccounts"),
+    );
+    if (!accounts.ok) {
+      return stateForError(accounts.error.code, bridgeVersion, status.result.appVersion);
+    }
+
     return {
-      kind: "locked",
+      kind: "ready",
       bridgeVersion,
       appVersion: status.result.appVersion,
+      accounts: accounts.result.accounts,
     };
+  } catch (error) {
+    return stateForTransportError(error);
   }
-
-  const accounts = await gateway
-    .request<{ accounts: readonly BrowserAccount[] }>(createRequest("listAccounts"))
-    .catch(() => undefined);
-  if (!accounts) return { kind: "connection-error" };
-  if (!accounts.ok) {
-    return stateForError(accounts.error.code, bridgeVersion, status.result.appVersion);
-  }
-
-  return {
-    kind: "ready",
-    bridgeVersion,
-    appVersion: status.result.appVersion,
-    accounts: accounts.result.accounts,
-  };
 }
 
 export async function requestTotp(gateway: NativeGateway, accountId: string): Promise<TotpResult> {

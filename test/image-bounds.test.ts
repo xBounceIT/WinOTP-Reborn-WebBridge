@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateImageHeader } from "../src/popup/image-bounds.ts";
-import { MAX_IMAGE_PIXELS, readQrImage } from "../src/popup/scan.ts";
+import { validateImageHeader, MAX_IMAGE_PIXELS } from "../src/popup/image-bounds.ts";
+import { readQrImage } from "../src/popup/scan.ts";
 
 function png(width: number, height: number): Buffer {
   const header = Buffer.alloc(33);
@@ -114,11 +114,14 @@ test("rejects decompression bombs before invoking the browser decoder", async ()
       ["image/webp", webp(vp8x(100000, 100000), vp8(100, 100))],
       ["image/webp", webp(vp8x(100, 100), vp8l(16384, 16384))],
     ] as const) {
-      await assert.rejects(readQrImage(new Blob([new Uint8Array(data)], { type })), /too large/);
+      await assert.rejects(
+        readQrImage(new Blob([new Uint8Array(data)], { type }), async () => undefined),
+        /too large\. Try a smaller browser window/,
+      );
     }
     await assert.rejects(
-      readQrImage(new Blob(["bad header"], { type: "image/png" })),
-      /dimensions/,
+      readQrImage(new Blob(["bad header"], { type: "image/png" }), async () => undefined),
+      /dimensions\. Reopen the extension/,
     );
     assert.equal(decoded, 0);
   } finally {
