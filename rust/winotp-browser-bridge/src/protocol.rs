@@ -24,6 +24,7 @@ pub enum RequestMethod {
     GetStatus,
     ListAccounts,
     GetTotp { account_id: String },
+    ImportQr { text: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -38,6 +39,9 @@ impl NativeRequest {
             RequestMethod::Ping => request_value(&self.request_id, "ping", None),
             RequestMethod::GetStatus => request_value(&self.request_id, "getStatus", None),
             RequestMethod::ListAccounts => request_value(&self.request_id, "listAccounts", None),
+            RequestMethod::ImportQr { text } => {
+                request_value(&self.request_id, "importQr", Some(json!({ "text": text })))
+            }
             RequestMethod::GetTotp { account_id } => request_value(
                 &self.request_id,
                 "getTotp",
@@ -73,6 +77,16 @@ fn valid_id(value: &str) -> bool {
         && characters.all(|character| {
             character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | ':' | '-')
         })
+}
+
+fn valid_qr_text(value: &str) -> bool {
+    let prefix = value.split_once("://").map(|(scheme, _)| scheme);
+    value.len() <= 8192
+        && prefix.is_some_and(|scheme| {
+            scheme.eq_ignore_ascii_case("otpauth")
+                || scheme.eq_ignore_ascii_case("otpauth-migration")
+        })
+        && !value.chars().any(|character| character.is_ascii_control())
 }
 
 fn exact_keys(object: &Map<String, Value>, expected: &[&str]) -> bool {
@@ -141,6 +155,26 @@ pub fn parse_request(body: &[u8]) -> Result<NativeRequest, RequestError> {
                 "ping" => RequestMethod::Ping,
                 "getStatus" => RequestMethod::GetStatus,
                 _ => RequestMethod::ListAccounts,
+            }
+        }
+        "importQr" => {
+            if !exact_keys(object, &["version", "requestId", "method", "params"]) {
+                return Err(invalid(request_id, "Unexpected request fields"));
+            }
+            let params = object
+                .get("params")
+                .and_then(Value::as_object)
+                .ok_or_else(|| invalid(request_id, "QR parameters are required"))?;
+            if !exact_keys(params, &["text"]) {
+                return Err(invalid(request_id, "Invalid QR parameters"));
+            }
+            let text = params
+                .get("text")
+                .and_then(Value::as_str)
+                .filter(|value| valid_qr_text(value))
+                .ok_or_else(|| invalid(request_id, "Invalid QR payload"))?;
+            RequestMethod::ImportQr {
+                text: text.to_owned(),
             }
         }
         "getTotp" => {
@@ -229,6 +263,15 @@ enum AppState {
 fn validate_success_result(method: &RequestMethod, result: Value) -> Option<Value> {
     match method {
         RequestMethod::Ping => None,
+        RequestMethod::ImportQr { .. } => {
+            let object = result.as_object()?;
+            if !exact_keys(object, &["accepted"])
+                || object.get("accepted").and_then(Value::as_bool) != Some(true)
+            {
+                return None;
+            }
+            Some(json!({ "accepted": true }))
+        }
         RequestMethod::GetStatus => {
             let result: StatusResult = serde_json::from_value(result).ok()?;
             if result.app_version.is_empty() || result.app_version.len() > 64 {
@@ -328,6 +371,41 @@ mod tests {
 
     fn parse(value: Value) -> Result<NativeRequest, RequestError> {
         parse_request(&serde_json::to_vec(&value).unwrap())
+    }
+
+    #[test]
+    fn qr_import_is_bounded_and_never_returns_payloads() {
+        let value = json!({"version": 1, "requestId": "scan-1", "method": "importQr", "params": {"text": "otpauth://totp/example?secret=TEST"}});
+        let request = parse(value.clone()).unwrap();
+        assert_eq!(request.as_value(), value);
+        for text in [
+            "https://example.test".to_owned(),
+            "otpauth://bad\n".to_owned(),
+            format!("otpauth://{}", "x".repeat(8192)),
+        ] {
+            let mut bad = value.clone();
+            bad["params"]["text"] = json!(text);
+            assert!(parse(bad).is_err());
+        }
+        let mut extra = value.clone();
+        extra["params"]["secret"] = json!("forbidden");
+        assert!(parse(extra).is_err());
+        assert!(
+            validate_forwarded_response(
+                &request,
+                success_response("scan-1", json!({"accepted": true}))
+            )
+            .is_ok()
+        );
+        for result in [
+            json!({"accepted": false}),
+            json!({"accepted": true, "text": "otpauth://secret"}),
+            json!({"accounts": []}),
+        ] {
+            assert!(
+                validate_forwarded_response(&request, success_response("scan-1", result)).is_err()
+            );
+        }
     }
 
     #[test]

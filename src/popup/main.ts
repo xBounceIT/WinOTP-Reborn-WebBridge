@@ -1,6 +1,8 @@
 import type { TotpResult } from "../shared/protocol.ts";
+import { NativeTransportError } from "../shared/transport.ts";
 import { getRuntime } from "../shared/webextension.ts";
 import { createGateway } from "./gateway.ts";
+import { capturePage, QrImportError, readQrImage, sendQr } from "./scan.ts";
 import {
   filterAccounts,
   loadPopup,
@@ -20,6 +22,10 @@ let activeCode: Readonly<{ accountId: string; result: TotpResult; expiresAt: num
 let timer: number | undefined;
 let refreshGeneration = 0;
 let codeGeneration = 0;
+const imageScanPage = globalThis.location?.search === "?scan=image";
+if (imageScanPage) document.body?.classList.add("image-scan-page");
+let scanBusy = false;
+let scanMessage = "";
 
 const htmlEntities: Readonly<Record<string, string>> = {
   "&": "&amp;",
@@ -155,6 +161,17 @@ function accountView(readyState: ReadyState): string {
     .join("");
 
   return `<section class="accounts">
+    <section class="scan" aria-label="Scan an authenticator QR code">
+      <div class="scan__actions">
+        ${
+          imageScanPage
+            ? `<label class="scan__file">Choose QR image<input type="file" data-qr-file accept="image/png,image/jpeg,image/webp" ${scanBusy ? "disabled" : ""}></label>`
+            : `<button class="button" data-scan-page ${scanBusy ? "disabled" : ""}>Scan page QR</button>
+             <button class="button" data-scan-image ${scanBusy ? "disabled" : ""}>Scan image…</button>`
+        }
+      </div>
+      <p class="scan__message" role="status" aria-live="polite">${escapeHtml(scanMessage || "Scan a QR code, then review the import in WinOTP.")}</p>
+    </section>
     <label class="search">
       <span class="sr-only">Search accounts</span>
       <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg>
@@ -181,6 +198,7 @@ function render(): void {
       <p class="connection connection--${state.kind}">${connectionLabel}</p>
     </header>
     ${state.kind === "ready" ? accountView(state) : statusView(state.kind)}
+    ${state.kind !== "ready" && scanMessage ? `<p class="scan__message" role="status">${escapeHtml(scanMessage)}</p>` : ""}
     <div class="toast" role="status" aria-live="polite" hidden>Code copied</div>
   </main>`;
 
@@ -188,6 +206,18 @@ function render(): void {
     .querySelector<HTMLElement>("[data-action='retry']")
     ?.addEventListener("click", () => void refresh());
   const search = root.querySelector<HTMLInputElement>("[data-search]");
+  root.querySelector<HTMLButtonElement>("[data-scan-page]")?.addEventListener("click", () => {
+    void scan(capturePage);
+  });
+  root.querySelector<HTMLButtonElement>("[data-scan-image]")?.addEventListener("click", () => {
+    window.open("popup.html?scan=image", "_blank");
+  });
+  const fileInput = root.querySelector<HTMLInputElement>("[data-qr-file]");
+  fileInput?.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    fileInput.value = "";
+    if (file) void scan(async () => file);
+  });
   search?.addEventListener("input", () => {
     query = search.value;
     render();
@@ -204,11 +234,47 @@ function render(): void {
   });
 }
 
+async function scan(source: () => Promise<Blob>): Promise<void> {
+  if (scanBusy || state.kind !== "ready") return;
+  scanBusy = true;
+  codeGeneration += 1;
+  clearActiveCode();
+  scanMessage = "Scanning…";
+  render();
+  try {
+    const text = await readQrImage(await source());
+    scanMessage = "Sending to WinOTP…";
+    render();
+    await sendQr(gateway, text);
+    scanMessage =
+      "QR sent. Review and confirm the import in WinOTP, then reopen the extension to refresh accounts.";
+  } catch (error) {
+    scanMessage =
+      error instanceof NativeTransportError
+        ? "Could not confirm delivery. Check WinOTP for a pending import before scanning again."
+        : error instanceof Error
+          ? error.message
+          : "Could not scan the QR code. Try again.";
+    if (
+      (error instanceof NativeTransportError ||
+        (error instanceof QrImportError &&
+          (error.code === "APP_LOCKED" || error.code === "APP_NOT_RUNNING"))) &&
+      state.kind === "ready"
+    ) {
+      state = stateForTotpError(error, state);
+    }
+  } finally {
+    scanBusy = false;
+    render();
+  }
+}
+
 async function refresh(): Promise<void> {
   const generation = ++refreshGeneration;
   codeGeneration += 1;
   clearActiveCode();
   state = { kind: "connecting" };
+  scanMessage = "";
   render();
   const loaded = await loadPopup(gateway);
   if (generation !== refreshGeneration) return;
@@ -217,7 +283,7 @@ async function refresh(): Promise<void> {
 }
 
 async function revealCode(accountId: string | undefined): Promise<void> {
-  if (!accountId || state.kind !== "ready") return;
+  if (!accountId || state.kind !== "ready" || scanBusy) return;
   const generation = ++codeGeneration;
   const readyState = state;
   try {

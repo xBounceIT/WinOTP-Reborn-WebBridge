@@ -2,7 +2,7 @@
 
 ## Boundaries
 
-The browser extension is an untrusted presentation client. It never receives TOTP seeds or material capable of reconstructing an account. The Rust native host is a transport adapter: it does not open WinOTP storage, decrypt data, implement OTP algorithms, or decide whether the app is unlocked. The WinOTP desktop main process remains the persistence and operating-system boundary, and `winotp-core` remains authoritative for portable domain, security-policy, and OTP behavior.
+The browser extension is an untrusted presentation client. It never receives TOTP seeds or material capable of reconstructing an account from the desktop. Explicit QR scans temporarily process user-provided authenticator URIs, which can contain secrets, and forward them only to the desktop import review. The Rust native host is a transport adapter: it does not open WinOTP storage, decrypt data, implement OTP algorithms, or decide whether the app is unlocked. The WinOTP desktop main process remains the persistence and operating-system boundary, and `winotp-core` remains authoritative for portable domain, security-policy, and OTP behavior.
 
 Defense in depth is applied at both bridge layers:
 
@@ -12,7 +12,8 @@ Defense in depth is applied at both bridge layers:
 - `listAccounts` and `getTotp` must return `APP_LOCKED` when desktop protection is active.
 - The popup does not persist accounts or codes and clears an expired displayed code.
 - No code, secret, or credential is logged.
-- The extension has only `nativeMessaging`; it has no host permissions and cannot inspect pages.
+- The extension has `nativeMessaging` and `activeTab`; it has no host permissions or content scripts. Page capture occurs only on an explicit scan action. QR images and text are not persisted or logged.
+- `importQr` accepts only bounded opaque authenticator payloads and returns only a fixed acknowledgement. Account validation, confirmation, duplicate handling and persistence remain in WinOTP.
 - There is no HTTP listener, cloud service, telemetry, analytics, tracking, advertising, or runtime-loaded code.
 
 ## Local IPC authentication
@@ -48,6 +49,6 @@ Not protected against:
 - a compromised browser, desktop application, OS, or signed release pipeline;
 - screen/clipboard capture after the user explicitly displays or copies a code.
 
-The desktop app must re-check its live lock/protection state for every `listAccounts` and `getTotp` request. Authentication to the IPC endpoint is not authorization to bypass locking.
+The desktop app must re-check its live lock/protection state for every `listAccounts`, `getTotp` and `importQr` request, and again when confirming an import. Authentication to the IPC endpoint is not authorization to bypass locking.
 
 Release jobs validate archive contents, manifest target/GUID/version, compressed size, and declared uncompressed size before sending a package or store credential. Store credentials are scoped to the final publication step, GitHub Actions are pinned to immutable commit SHAs, and release artifacts include SHA-256 checksums. npm installs fail on unreviewed dependency lifecycle scripts; the only approved script is pinned to the reviewed esbuild version.

@@ -20,6 +20,8 @@ function restoreGlobal(name: string, descriptor: PropertyDescriptor | undefined)
 function nativeResponse(request: NativeRequest): unknown {
   const envelope = { version: 1 as const, requestId: request.requestId, ok: true as const };
   switch (request.method) {
+    case "importQr":
+      return { ...envelope, result: { accepted: true } };
     case "ping":
       return { ...envelope, result: { protocolVersion: 1, bridgeVersion: "1.0.0" } };
     case "getStatus":
@@ -53,6 +55,7 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
   let markup = "";
   let copiedCode = "";
   const popupRequests: string[] = [];
+  let openedPage = "";
   let popupMode:
     | "host-missing"
     | "app-not-running"
@@ -93,6 +96,16 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
       listeners.set("retry", listener);
     },
   };
+  const scanPageButton = {
+    addEventListener(_type: string, listener: Listener) {
+      listeners.set("scan-page", listener);
+    },
+  };
+  const scanImageButton = {
+    addEventListener(_type: string, listener: Listener) {
+      listeners.set("scan-image", listener);
+    },
+  };
   const countdown = {
     textContent: "",
     label: "",
@@ -110,6 +123,10 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
       markup = value;
     },
     querySelector(selector: string): unknown {
+      if (selector === "[data-scan-page]" && markup.includes("data-scan-page"))
+        return scanPageButton;
+      if (selector === "[data-scan-image]" && markup.includes("data-scan-image"))
+        return scanImageButton;
       if (selector === "[data-action='retry']" && markup.includes('data-action="retry"'))
         return retryButton;
       if (selector === "[data-search]" && markup.includes("data-search")) return search;
@@ -216,6 +233,9 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
     descriptors.set(
       "window",
       setGlobal("window", {
+        open(url: string) {
+          openedPage = url;
+        },
         clearInterval() {
           intervalListener = undefined;
         },
@@ -292,6 +312,13 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
     listeners.get("retry")?.();
     await nextTurn();
     assert.match(markup, /connection--ready">Connected<\/p>/u);
+    assert.match(markup, /data-scan-page/);
+    assert.match(markup, /data-scan-image/);
+    listeners.get("scan-image")?.();
+    assert.equal(openedPage, "popup.html?scan=image");
+    listeners.get("scan-page")?.();
+    await nextTurn();
+    assert.match(markup, /Page capture is unavailable/);
     assert.doesNotMatch(markup, /WinOTP connected|connection--ready"><i>/u);
     assert.match(markup, /Issuer &amp; Co/u);
     assert.match(markup, /&lt;user&gt;/u);
@@ -425,6 +452,21 @@ test("runs the popup and background entrypoints against browser-compatible APIs"
       kind: "native-response",
       response: nativeResponse(request),
     });
+
+    const importRequest = createRequest("importQr", { text: "otpauth://totp/Example?secret=TEST" });
+    const importReply = await new Promise<unknown>((resolve) => {
+      assert.equal(backgroundListener?.(importRequest, { id: "extension-id" }, resolve), true);
+    });
+    assert.deepEqual(importReply, {
+      kind: "native-response",
+      response: {
+        version: 1,
+        requestId: importRequest.requestId,
+        ok: true,
+        result: { accepted: true },
+      },
+    });
+    assert.doesNotMatch(JSON.stringify(importReply), /otpauth|secret|TEST/);
 
     nativeMode = "disconnect";
     const failedReply = await new Promise<unknown>((resolve) => {

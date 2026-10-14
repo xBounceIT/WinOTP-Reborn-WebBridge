@@ -87,6 +87,10 @@ async function buildTarget(target: BrowserTarget): Promise<void> {
       legalComments: "none",
     }),
     copyFile(
+      path.join(repositoryRoot, "public", "third-party-licenses.txt"),
+      path.join(targetDirectory, "third-party-licenses.txt"),
+    ),
+    copyFile(
       path.join(repositoryRoot, "src", "popup", "index.html"),
       path.join(targetDirectory, "popup.html"),
     ),

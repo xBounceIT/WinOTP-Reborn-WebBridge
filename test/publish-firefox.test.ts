@@ -41,6 +41,7 @@ test("publishes a validated Firefox archive directly through AMO API v5", async 
       "popup.css": strToU8(""),
       "popup.html": strToU8(""),
       "popup.js": strToU8(""),
+      "third-party-licenses.txt": strToU8("jsQR: Apache-2.0"),
     }),
   );
   const sourceArchive = path.join(temporaryDirectory, "source.zip");

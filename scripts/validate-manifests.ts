@@ -36,7 +36,7 @@ for (const target of targets) {
     await readFile(path.join(repositoryRoot, "dist", target, "manifest.json"), "utf8"),
   ) as Record<string, unknown>;
   assert.equal(manifest.manifest_version, 3);
-  assert.deepEqual(manifest.permissions, ["nativeMessaging"]);
+  assert.deepEqual(manifest.permissions, ["nativeMessaging", "activeTab"]);
   assert.deepEqual(manifest.content_security_policy, {
     extension_pages: "script-src 'self'; object-src 'none'",
   });

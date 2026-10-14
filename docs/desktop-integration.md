@@ -69,3 +69,15 @@ Electron authenticates before dispatch. It returns the standard response from [p
 10. Add platform tests for endpoint ACLs, lifecycle cleanup, lock transitions, and single-instance behavior.
 
 Starting or activating WinOTP is intentionally deferred. Until a safe cross-platform application lifecycle is implemented, a missing endpoint maps to `APP_NOT_RUNNING` and the popup directs the user to open WinOTP and retry.
+
+## QR import support
+
+The WebBridge `importQr` transport is implemented in this repository. The separate desktop repository must implement its handler before users can complete imports:
+
+1. Authenticate the request and re-check the current lock/protection policy. Return `APP_LOCKED` or `APP_NOT_RUNNING` as appropriate.
+2. Apply the same closed request shape and 8192-byte payload bounds as [protocol.md](protocol.md). Treat the text as untrusted input and use the existing desktop QR/URI import validation, including migration support where available.
+3. Open/activate the existing import review UI with the payload held only in memory. Require explicit user confirmation before saving; prevent duplicate concurrent reviews/imports through the existing account flow.
+4. Respond immediately with `{ "accepted": true }` once the review has been queued. Do not wait for user input within the five-second transport deadline. Reject unsupported payloads with `INVALID_REQUEST`; never return the payload in results or errors.
+5. Re-check protection at confirmation, await persistence, handle duplicates/errors in the desktop UI, and discard the payload on cancellation/lock/completion. Do not log QR text.
+
+Test this on Windows, macOS and Linux with locked, unavailable, older and compatible desktop releases. This repository's tests cover the extension and bridge contract, not the separately maintained desktop implementation.

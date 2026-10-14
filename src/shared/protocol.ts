@@ -1,6 +1,7 @@
 export const PROTOCOL_VERSION = 1 as const;
 export const NATIVE_HOST_NAME = "com.xbounceit.winotp";
 export const MAX_NATIVE_MESSAGE_BYTES = 64 * 1024;
+export const MAX_QR_TEXT_BYTES = 8 * 1024;
 
 export type BrowserAccount = Readonly<{
   id: string;
@@ -33,6 +34,12 @@ export type NativeRequest =
       requestId: string;
       method: "getTotp";
       params: Readonly<{ accountId: string }>;
+    }>
+  | Readonly<{
+      version: 1;
+      requestId: string;
+      method: "importQr";
+      params: Readonly<{ text: string }>;
     }>;
 
 export type ErrorCode =
@@ -88,18 +95,37 @@ export function isValidId(value: unknown): value is string {
 
 export function createRequest(method: "ping" | "getStatus" | "listAccounts"): NativeRequest;
 export function createRequest(method: "getTotp", params: { accountId: string }): NativeRequest;
+export function createRequest(method: "importQr", params: { text: string }): NativeRequest;
 export function createRequest(
   method: NativeRequest["method"],
-  params?: { accountId: string },
+  params?: { accountId: string } | { text: string },
 ): NativeRequest {
   const requestId = crypto.randomUUID();
   if (method === "getTotp") {
-    if (!params || !isValidId(params.accountId)) {
+    if (!params || !("accountId" in params) || !isValidId(params.accountId)) {
       throw new TypeError("A valid account ID is required");
     }
     return { version: PROTOCOL_VERSION, requestId, method, params };
   }
+  if (method === "importQr") {
+    if (!params || !("text" in params) || !isQrText(params.text)) {
+      throw new TypeError("A supported QR payload is required");
+    }
+    return { version: PROTOCOL_VERSION, requestId, method, params };
+  }
   return { version: PROTOCOL_VERSION, requestId, method };
+}
+
+// Transport allow-list only. URI parsing and account validation belong to WinOTP.
+export function isQrText(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^(?:otpauth|otpauth-migration):\/\//i.test(value) &&
+    hasUtf8Length(value, 1, MAX_QR_TEXT_BYTES) &&
+    !Array.from(value).some(
+      (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+    )
+  );
 }
 
 export function isNativeRequest(value: unknown): value is NativeRequest {
@@ -112,6 +138,14 @@ export function isNativeRequest(value: unknown): value is NativeRequest {
       isRecord(value.params) &&
       hasExactKeys(value.params, ["accountId"]) &&
       isValidId(value.params.accountId)
+    );
+  }
+  if (value.method === "importQr") {
+    return (
+      hasExactKeys(value, ["version", "requestId", "method", "params"]) &&
+      isRecord(value.params) &&
+      hasExactKeys(value.params, ["text"]) &&
+      isQrText(value.params.text)
     );
   }
   return (
@@ -156,6 +190,8 @@ function isAccountList(value: unknown): value is readonly BrowserAccount[] {
 function isResultFor(request: NativeRequest, result: unknown): boolean {
   if (!isRecord(result)) return false;
   switch (request.method) {
+    case "importQr":
+      return hasExactKeys(result, ["accepted"]) && result.accepted === true;
     case "ping":
       return (
         hasExactKeys(result, ["protocolVersion", "bridgeVersion"]) &&

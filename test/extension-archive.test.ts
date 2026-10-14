@@ -15,6 +15,7 @@ const expectedFiles: Zippable = {
   "popup.css": strToU8(""),
   "popup.html": strToU8(""),
   "popup.js": strToU8(""),
+  "third-party-licenses.txt": strToU8("jsQR: Apache-2.0"),
 };
 
 async function writeArchive(

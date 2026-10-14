@@ -3,10 +3,42 @@ import test from "node:test";
 
 import {
   createRequest,
+  isQrText,
+  MAX_QR_TEXT_BYTES,
   isNativeRequest,
   parseNativeResponse,
   type NativeResponse,
 } from "../src/shared/protocol.ts";
+
+test("QR import accepts bounded opaque input and only an acknowledgement response", () => {
+  const text = "otpauth://totp/Example?secret=TEST";
+  const request = createRequest("importQr", { text });
+  assert.equal(isNativeRequest(request), true);
+  for (const value of [
+    null,
+    "https://example.test",
+    "otpauth://bad\n",
+    "otpauth://bad\x7f",
+    "otpauth://" + "é".repeat(MAX_QR_TEXT_BYTES / 2),
+  ]) {
+    assert.equal(isQrText(value), false);
+    assert.equal(isNativeRequest({ ...request, params: { text: value } }), false);
+  }
+  assert.equal(isQrText("OTPAUTH-MIGRATION://offline?data=TEST"), true);
+  assert.equal(isQrText("otpauth://" + "x".repeat(MAX_QR_TEXT_BYTES - 10)), true);
+  assert.throws(() => createRequest("importQr", { text: "invalid" }));
+  assert.equal(isNativeRequest({ ...request, params: { text, secret: "forbidden" } }), false);
+  const response = {
+    version: 1,
+    requestId: request.requestId,
+    ok: true,
+    result: { accepted: true },
+  };
+  assert.deepEqual(parseNativeResponse(request, response), response);
+  for (const result of [{ accepted: false }, { accepted: true, text }, { accounts: [] }]) {
+    assert.throws(() => parseNativeResponse(request, { ...response, result }));
+  }
+});
 
 test("strictly validates requests and account IDs", () => {
   assert.equal(isNativeRequest({ version: 1, requestId: "request-1", method: "ping" }), true);

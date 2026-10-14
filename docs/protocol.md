@@ -20,6 +20,23 @@ Every request is a closed object: unknown properties, malformed IDs, unknown met
 
 `ping` is answered by the Rust host without contacting the desktop app. This lets the popup distinguish an absent native host from a desktop app that is not running.
 
+### QR import handoff
+
+```json
+{
+  "version": 1,
+  "requestId": "scan-1",
+  "method": "importQr",
+  "params": { "text": "otpauth://totp/Example?secret=EXAMPLE" }
+}
+```
+
+`text` is an opaque, user-scanned payload with an `otpauth://` or `otpauth-migration://` prefix (case insensitive), no ASCII control characters, and at most 8192 UTF-8 bytes. Both transport layers enforce these bounds and reject unknown fields. URI, secret and account validation remain exclusively in the desktop app. Images never cross Native Messaging.
+
+The only success result is `{ "accepted": true }`. It acknowledges that WinOTP has accepted the request for a local import review; it does not mean persistence succeeded. The desktop must respond promptly, then let the user review and confirm in its existing import UI. It must not hold the request open while waiting for confirmation. No decoded payload or account secrets may be returned.
+
+This is an additive protocol-1 method: older hosts/apps reject it with `INVALID_REQUEST`, and the extension explains that a compatible update is required. There is no automatic retry of an import after timeout because the review may already have opened.
+
 ## Success responses
 
 ```json

@@ -16,6 +16,7 @@ const EXPECTED_FILES = [
   "popup.css",
   "popup.html",
   "popup.js",
+  "third-party-licenses.txt",
 ];
 
 function assertBoundedZipDirectory(archive: Uint8Array): void {
