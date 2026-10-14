@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { unzipSync, zipSync, type Zippable } from "fflate";
+import { assertBoundedZipDirectory, readBoundedArchive } from "./zip-bounds.ts";
 
 const MAX_SOURCE_ARCHIVE_BYTES = 200 * 1024 * 1024;
 const SOURCE_FILES = [
@@ -21,6 +22,7 @@ const SOURCE_FILES = [
   "scripts/build.ts",
   "scripts/firefox-source-archive.ts",
   "scripts/version.ts",
+  "scripts/zip-bounds.ts",
 ] as const;
 const SOURCE_DIRECTORIES = ["src"] as const;
 const REQUIRED_SOURCE_ENTRIES = [
@@ -33,6 +35,7 @@ const REQUIRED_SOURCE_ENTRIES = [
   "scripts/build.ts",
   "scripts/firefox-source-archive.ts",
   "scripts/version.ts",
+  "scripts/zip-bounds.ts",
   "src/background/main.ts",
   "src/popup/main.ts",
 ] as const;
@@ -84,13 +87,15 @@ export async function createFirefoxSourceArchive(
 export async function validateFirefoxSourceArchive(
   archivePath: string,
   expectedVersion: string,
-): Promise<Buffer> {
-  const archive = await readFile(archivePath);
-  if (archive.byteLength === 0 || archive.byteLength > MAX_SOURCE_ARCHIVE_BYTES) {
-    throw new Error("Firefox source archive has an invalid size");
-  }
+): Promise<Buffer<ArrayBuffer>> {
+  const archive = await readBoundedArchive(
+    archivePath,
+    MAX_SOURCE_ARCHIVE_BYTES,
+    "Firefox source archive",
+  );
 
   let files: Record<string, Uint8Array>;
+  assertBoundedZipDirectory(archive, MAX_SOURCE_ARCHIVE_BYTES, "Firefox source archive");
   try {
     files = unzipSync(archive);
   } catch {

@@ -1,14 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import {
-  capturePage,
-  decodeQr,
-  MAX_IMAGE_BYTES,
-  MAX_IMAGE_PIXELS,
-  readQrImage,
-  sendQr,
-} from "../src/popup/scan.ts";
+import { decodeQr, readQrImage, sendQr } from "../src/popup/scan.ts";
+import { captureBlob } from "../src/shared/page-scan.ts";
+import { MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS } from "../src/popup/image-bounds.ts";
 import type { NativeGateway } from "../src/popup/state.ts";
 import type { ErrorCode, NativeRequest, NativeResponse } from "../src/shared/protocol.ts";
 import { NativeTransportError } from "../src/shared/transport.ts";
@@ -21,6 +16,8 @@ const samplePng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZ1kAAAAASUVORK5CYII=",
   "base64",
 );
+const select = async () => ({ x: 0.25, y: 0.25, width: 0.5, height: 0.5 });
+
 function pixels(rows: string[], inverted = false): ImageData {
   const scale = 5;
   const width = (rows.length + 8) * scale;
@@ -68,211 +65,17 @@ function setGlobal(name: string, value: unknown): () => void {
   };
 }
 
-test("image scan UI waits for acknowledgement, prevents duplicate submissions, and permits retry", async () => {
-  let markup = "";
-  let change: (() => void) | undefined;
-  let retry: (() => void) | undefined;
-  let reply: ((response: unknown) => void) | undefined;
-  let pending: NativeRequest | undefined;
-  let imports = 0;
-  const fileInput = {
-    value: "",
-    files: [] as Blob[],
-    addEventListener(_event: string, listener: () => void) {
-      change = listener;
-    },
-  };
-  const root = {
-    get innerHTML() {
-      return markup;
-    },
-    set innerHTML(value: string) {
-      markup = value;
-    },
-    querySelector(selector: string) {
-      if (selector === "[data-action='retry']" && markup.includes('data-action="retry"')) {
-        return {
-          addEventListener(_event: string, listener: () => void) {
-            retry = listener;
-          },
-        };
-      }
-      return selector === "[data-qr-file]" && markup.includes("data-qr-file") ? fileInput : null;
-    },
-    querySelectorAll() {
-      return [];
-    },
-  };
-  const restore = [
-    setGlobal("location", { search: "?scan=image" }),
-    setGlobal("window", { clearInterval() {} }),
-    setGlobal("document", {
-      querySelector: () => root,
-      createElement: () => ({
-        width: 0,
-        height: 0,
-        getContext: () => ({ drawImage() {}, getImageData: () => pixels(matrices.auth) }),
-      }),
-    }),
-    setGlobal("createImageBitmap", async () => ({
-      width: pixels(matrices.auth).width,
-      height: pixels(matrices.auth).height,
-      close() {},
-    })),
-    setGlobal("chrome", {
-      runtime: {
-        sendMessage(request: NativeRequest, callback: (response: unknown) => void) {
-          if (request.method === "importQr") {
-            imports++;
-            pending = request;
-            reply = callback;
-            return;
-          }
-          const result =
-            request.method === "ping"
-              ? { protocolVersion: 1, bridgeVersion: "1.0.0" }
-              : request.method === "getStatus"
-                ? { state: "unlocked", appVersion: "1.0.0" }
-                : {
-                    accounts: [
-                      { id: "test-account", issuer: "Private issuer", name: "Private account" },
-                    ],
-                  };
-          callback({
-            kind: "native-response",
-            response: { version: 1, requestId: request.requestId, ok: true, result },
-          });
-        },
-      },
-    }),
-  ];
-  const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
-  try {
-    await import("../src/popup/main.ts");
-    await tick();
-    assert.match(markup, /Choose QR image/);
-    assert.match(markup, /Private account/);
-    assert.doesNotMatch(markup, /data-scan-page/);
-    change?.(); // Cancelling file selection does not send anything.
-    assert.equal(imports, 0);
-    fileInput.files = [new Blob([samplePng], { type: "image/png" })];
-    change?.();
-    change?.();
-    await tick();
-    assert.equal(imports, 1);
-    assert.equal(fileInput.value, "");
-    assert.match(markup, /Sending to WinOTP/);
-    assert.match(markup, /disabled/);
-    assert.doesNotMatch(markup, /QR sent|secret=|JBSWY/);
-    reply?.({
-      kind: "native-response",
-      response: { version: 1, requestId: pending?.requestId, ok: true, result: { accepted: true } },
-    });
-    await tick();
-    assert.match(markup, /QR sent/);
-    assert.doesNotMatch(markup, /disabled|secret=|JBSWY/);
-    change?.();
-    await tick();
-    assert.equal(imports, 2);
-    reply?.({
-      kind: "native-response",
-      response: {
-        version: 1,
-        requestId: pending?.requestId,
-        ok: false,
-        error: { code: "APP_LOCKED", message: "private" },
-      },
-    });
-    await tick();
-    assert.match(markup, /Unlock WinOTP/);
-    assert.match(markup, /connection--locked/);
-    assert.doesNotMatch(
-      markup,
-      /QR sent|disabled|private|Private account|Private issuer|data-qr-file/,
-    );
-    change?.(); // A detached file input must not bypass the locked state.
-    await tick();
-    assert.equal(imports, 2);
-    retry?.();
-    await tick();
-    assert.match(markup, /Private account/);
-    assert.doesNotMatch(markup, /Unlock WinOTP/);
-    change?.();
-    await tick();
-    assert.equal(imports, 3);
-    reply?.({
-      kind: "native-response",
-      response: {
-        version: 1,
-        requestId: pending?.requestId,
-        ok: false,
-        error: { code: "APP_NOT_RUNNING", message: "private" },
-      },
-    });
-    await tick();
-    assert.match(markup, /connection--app-not-running/);
-    assert.doesNotMatch(markup, /Private account|Private issuer|data-qr-file/);
-    for (const [reason, expectedState] of [
-      ["HOST_UNAVAILABLE", "host-missing"],
-      ["TIMEOUT", "connection-error"],
-      ["NATIVE_ERROR", "connection-error"],
-      ["INVALID_RESPONSE", "connection-error"],
-      ["UNSUPPORTED_PROTOCOL", "incompatible"],
-    ] as const) {
-      retry?.();
-      await tick();
-      assert.match(markup, /Private account/);
-      change?.();
-      await tick();
-      const sent: number = imports;
-      reply?.({ kind: "transport-error", reason });
-      await tick();
-      assert.match(markup, new RegExp(`connection--${expectedState}`));
-      assert.match(markup, /Check WinOTP for a pending import before scanning again/);
-      assert.doesNotMatch(markup, /Private account|Private issuer|data-qr-file|Connected/);
-      change?.();
-      await tick();
-      assert.equal(imports, sent);
-    }
-    retry?.();
-    await tick();
-    change?.();
-    await tick();
-    const sentBeforeHostError: number = imports;
-    reply?.({
-      kind: "native-response",
-      response: {
-        version: 1,
-        requestId: pending?.requestId,
-        ok: false,
-        error: { code: "NATIVE_HOST_ERROR", message: "private desktop detail" },
-      },
-    });
-    await tick();
-    assert.match(markup, /connection--connection-error/);
-    assert.match(markup, /Check WinOTP for a pending import before scanning again/);
-    assert.doesNotMatch(
-      markup,
-      /could not accept|Private account|Private issuer|data-qr-file|private desktop detail/,
-    );
-    change?.();
-    await tick();
-    assert.equal(imports, sentBeforeHostError);
-  } finally {
-    for (const undo of restore.reverse()) undo();
-  }
-});
-
-test("reads local images, bounds inputs, and clears canvas and pixel buffers", async () => {
+test("reads bounded captures, decodes only the selected crop, and clears buffers", async () => {
   for (const blob of [
     new Blob([], { type: "image/png" }),
     new Blob(["svg"], { type: "image/svg+xml" }),
     new Blob([new Uint8Array(MAX_IMAGE_BYTES + 1)], { type: "image/png" }),
   ]) {
-    await assert.rejects(readQrImage(blob), /Choose a PNG/);
+    await assert.rejects(readQrImage(blob, select), /too large or unsupported/);
   }
   let image = pixels(matrices.auth);
   let closed = 0;
+  let drawn: unknown[] = [];
   let mode = "ok";
   const canvas = {
     width: 0,
@@ -281,7 +84,9 @@ test("reads local images, bounds inputs, and clears canvas and pixel buffers", a
       return mode === "no-context"
         ? null
         : {
-            drawImage() {},
+            drawImage(...args: unknown[]) {
+              drawn = args;
+            },
             getImageData() {
               return image;
             },
@@ -305,69 +110,48 @@ test("reads local images, bounds inputs, and clears canvas and pixel buffers", a
     unreadable.arrayBuffer = async () => {
       throw new Error("private read failure");
     };
-    await assert.rejects(readQrImage(unreadable), /Could not read this image/);
-    assert.match(await readQrImage(blob), /^otpauth:\/\//);
+    await assert.rejects(readQrImage(unreadable, select), /Could not read the page capture/);
+    assert.match((await readQrImage(blob, select))!, /^otpauth:\/\//);
     assert.ok(image.data.every((byte) => byte === 0));
     assert.equal(canvas.width, 0);
     assert.equal(canvas.height, 0);
     assert.equal(closed, 1);
+    assert.deepEqual(drawn.slice(1), [56, 56, 113, 113, 0, 0, 113, 113]);
+    await assert.rejects(
+      readQrImage(blob, async () => ({ x: 0, y: 0, width: 0, height: 0 })),
+      /select an area/,
+    );
+    assert.equal(await readQrImage(blob, async () => undefined), undefined);
+    assert.equal(closed, 3);
     mode = "invalid";
-    await assert.rejects(readQrImage(blob), /Could not read/);
+    await assert.rejects(readQrImage(blob, select), /Could not read/);
     mode = "large";
-    await assert.rejects(readQrImage(blob), /too large/);
+    await assert.rejects(readQrImage(blob, select), /too large/);
     mode = "no-context";
-    await assert.rejects(readQrImage(blob), /unavailable/);
+    await assert.rejects(readQrImage(blob, select), /unavailable/);
     mode = "ok";
     image = pixels(matrices.url);
-    await assert.rejects(readQrImage(blob), /not a supported/);
+    await assert.rejects(readQrImage(blob, select), /not a supported/);
     assert.ok(image.data.every((byte) => byte === 0));
-    assert.equal(closed, 4);
+    assert.equal(closed, 6);
   } finally {
     restoreDocument();
     restoreBitmap();
   }
 });
 
-test("captures only browser-generated inline images and handles denied capture", async () => {
-  let mode = "ok";
-  const runtime = { lastError: undefined as undefined | { message: string } };
-  const restore = setGlobal("chrome", {
-    runtime,
-    tabs: {
-      captureVisibleTab(options: unknown, callback: (url: string) => void) {
-        assert.deepEqual(options, { format: "png" });
-        if (mode === "throws") throw new Error("capture failed");
-        callback(
-          mode === "url"
-            ? "https://example.test/image.png"
-            : mode === "large"
-              ? "data:image/png;base64," + "A".repeat(MAX_IMAGE_BYTES * 2)
-              : "data:image/png;base64,AQID",
-        );
-      },
-    },
-  });
-  try {
-    const blob = await capturePage();
-    assert.equal(blob.type, "image/png");
-    assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), new Uint8Array([1, 2, 3]));
-    runtime.lastError = { message: "permission denied" };
-    await assert.rejects(capturePage(), /Could not capture/);
-    runtime.lastError = undefined;
-    mode = "url";
-    await assert.rejects(capturePage(), /Could not capture/);
-    mode = "large";
-    await assert.rejects(capturePage(), /too large/);
-    mode = "throws";
-    await assert.rejects(capturePage());
-    const missing = setGlobal("chrome", {});
-    try {
-      await assert.rejects(capturePage(), /unavailable/);
-    } finally {
-      missing();
-    }
-  } finally {
-    restore();
+test("accepts only bounded browser-generated inline captures", async () => {
+  const blob = captureBlob("data:image/png;base64,AQID");
+  assert.equal(blob.type, "image/png");
+  assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), new Uint8Array([1, 2, 3]));
+  for (const url of [undefined, "https://example.test/image.png", "data:image/jpeg;base64,AQID"]) {
+    assert.throws(() => captureBlob(url), /Could not capture/);
+  }
+  for (const url of [
+    "data:image/png;base64,!!!",
+    "data:image/png;base64," + "A".repeat(MAX_IMAGE_BYTES * 2),
+  ]) {
+    assert.throws(() => captureBlob(url), /too large or unreadable/);
   }
 });
 

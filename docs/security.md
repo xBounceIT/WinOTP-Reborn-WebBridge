@@ -12,9 +12,9 @@ Defense in depth is applied at both bridge layers:
 - `listAccounts` and `getTotp` must return `APP_LOCKED` when desktop protection is active.
 - The popup does not persist accounts or codes and clears an expired displayed code.
 - No code, secret, or credential is logged.
-- The extension has `nativeMessaging` and `activeTab`; it has no host permissions or content scripts. Page capture occurs only on an explicit scan action. QR images and text are not persisted or logged.
+- The extension has `nativeMessaging`, `activeTab`, and `scripting`, with no persistent host permissions or automatic content scripts. Its bundled overlay is injected only on an explicit scan action; it does not inspect page content. The background accepts only QR capture and bounded QR-import messages from that top-level page, and rejects generic native requests from page contexts. Page capture occurs only after the user confirms a rectangle. QR images and text are not persisted or logged.
 - `importQr` accepts only bounded opaque authenticator payloads and returns only a fixed acknowledgement. Account validation, confirmation, duplicate handling and persistence remain in WinOTP.
-- There is no HTTP listener, cloud service, telemetry, analytics, tracking, advertising, or runtime-loaded code.
+- There is no HTTP listener, cloud service, telemetry, analytics, tracking, advertising, or remotely loaded code.
 
 ## Local IPC authentication
 
@@ -30,13 +30,13 @@ The descriptor identifies either:
 - a Windows named pipe whose name starts with `\\.\pipe\winotp-reborn-browser-`, or
 - an absolute Unix-domain socket path.
 
-The desktop server must also restrict the named-pipe/socket ACL to the current user. The host sends the ephemeral token inside the first framed local IPC request. It never writes that token elsewhere.
+The desktop server must also restrict the named-pipe/socket ACL to the current user. Before sending any request, the host checks the connected server's OS user: the process token SID on Windows and peer credentials on Unix. Windows connections permit identification only, without allowing the server to impersonate the host. The host sends the ephemeral token inside the first framed local IPC request. It never writes that token elsewhere.
 
 ## Threat model
 
 Protected against:
 
-- websites and content scripts attempting to access Native Messaging;
+- websites and injected page contexts attempting to request account metadata or OTP codes through Native Messaging;
 - a different installed extension attempting to launch this host (browser host-manifest allow-list);
 - malformed, oversized, truncated, or unexpected browser messages;
 - accidental secret-bearing fields in a desktop response;

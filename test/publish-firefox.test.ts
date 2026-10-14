@@ -1,4 +1,5 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -41,6 +42,7 @@ test("publishes a validated Firefox archive directly through AMO API v5", async 
       "popup.css": strToU8(""),
       "popup.html": strToU8(""),
       "popup.js": strToU8(""),
+      "overlay.js": strToU8(""),
       "third-party-licenses.txt": strToU8("jsQR: Apache-2.0"),
     }),
   );
@@ -57,6 +59,7 @@ test("publishes a validated Firefox archive directly through AMO API v5", async 
       "scripts/build.ts": strToU8(""),
       "scripts/firefox-source-archive.ts": strToU8(""),
       "scripts/version.ts": strToU8(""),
+      "scripts/zip-bounds.ts": strToU8(""),
       "src/background/main.ts": strToU8(""),
       "src/popup/main.ts": strToU8(""),
     }),
@@ -120,6 +123,7 @@ test("publishes a validated Firefox archive directly through AMO API v5", async 
     if (typeof address !== "object" || address === null)
       throw new Error("Test server has no TCP address");
 
+    const originalArchive = readFileSync(archive);
     const status = await publishFirefox({
       apiBase: `http://127.0.0.1:${address.port}/api/v5`,
       archive,
@@ -130,7 +134,10 @@ test("publishes a validated Firefox archive directly through AMO API v5", async 
       metadata: { name: { "en-US": "WinOTP Reborn" }, version: { license: "MIT" } },
       privacyPolicy: { "en-US": "Local only." },
       secret: "test-secret",
-      sourceArchive,
+      get sourceArchive() {
+        writeFileSync(archive, "replaced after validation");
+        return sourceArchive;
+      },
     });
 
     assert.equal(status, "nominated");
@@ -147,6 +154,8 @@ test("publishes a validated Firefox archive directly through AMO API v5", async 
     assert.ok(requests.every(({ authorization }) => authorization.startsWith("JWT ")));
     assert.equal(new Set(requests.map(({ authorization }) => authorization)).size, requests.length);
     assert.match(requests[0]?.body ?? "", /name="channel"\r\n\r\nlisted/u);
+    assert.ok(requests[0]?.body.includes(originalArchive.toString("utf8")));
+    await writeFile(archive, originalArchive);
 
     const submission = JSON.parse(requests[2]?.body ?? "{}") as Record<string, unknown>;
     assert.deepEqual(submission.name, { "en-US": "WinOTP Reborn" });

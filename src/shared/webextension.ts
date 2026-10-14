@@ -4,6 +4,9 @@ export interface RuntimeError {
 
 export interface RuntimeMessageSender {
   readonly id?: string;
+  readonly frameId?: number;
+  readonly url?: string;
+  readonly tab?: { readonly id?: number; readonly windowId: number };
 }
 
 export interface RuntimePort {
@@ -19,7 +22,7 @@ export interface RuntimePort {
 
 export interface RuntimeApi {
   readonly id: string;
-  readonly lastError?: RuntimeError;
+  readonly lastError?: RuntimeError | undefined;
   readonly onMessage: {
     addListener(
       listener: (

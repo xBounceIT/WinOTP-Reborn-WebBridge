@@ -20,8 +20,9 @@ requested. The extension does not receive OTP seeds, `otpauth://` URIs, backup d
 encryption keys, database contents, or WinOTP protection credentials.
 
 When you explicitly choose to scan a QR, the extension temporarily processes a screenshot of
-the visible browser tab or a local image you select. It decodes the QR locally using bundled
-code and forwards only the scanned authenticator URI to WinOTP for import review. Such URIs
+the visible browser tab after you select an area using an overlay on the webpage. It decodes only the rectangle
+you manually select and confirm, using bundled code, and forwards only the scanned
+authenticator URI to WinOTP for import review. Local image import is not supported. Such URIs
 can contain account secrets. Images and decoded text are held only in memory and are not
 saved, logged, uploaded, copied to the clipboard, or returned from WinOTP to the browser.
 
@@ -40,15 +41,17 @@ system clipboard and remains subject to your operating system and clipboard-mana
 
 The extension does not:
 
-- automatically inspect websites, or modify pages, read browser history or inspect network traffic;
+- automatically inspect or modify websites, read browser history or inspect network traffic;
 - collect telemetry, analytics, diagnostics, advertising identifiers, or usage statistics;
 - use cookies or tracking technologies;
 - load remote code or contact a developer-operated service; or
 - sell, share, or transfer user data to third parties.
 
-The extension has no host permissions or content scripts. It uses `nativeMessaging` to
-communicate with the locally installed WinOTP Reborn bridge, and `activeTab` to capture the
-visible page only when you explicitly request a QR scan. It does not request camera access.
+The extension has no persistent host permissions or automatically running content scripts.
+It uses `nativeMessaging` to communicate with the locally installed WinOTP Reborn bridge,
+`activeTab` for the explicitly requested page capture, and `scripting` to inject its bundled
+selection overlay on that page. The overlay does not inspect page content. Page code cannot
+request account lists or OTP codes through the overlay. The extension does not request camera access.
 
 ## Store and browser services
 

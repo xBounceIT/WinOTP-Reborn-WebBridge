@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { removeRegistryRegistration } from "./windows-registry.ts";
 
 const HOST_NAME = "com.xbounceit.winotp";
 const FIREFOX_EXTENSION_ID = "{250f3c41-cf5e-4c20-a07c-e99a8532436b}";
@@ -78,9 +79,9 @@ async function generate(): Promise<Readonly<{ chrome: string; firefox: string }>
   return { chrome, firefox };
 }
 
-function runRegistry(args: readonly string[], tolerateMissing = false): void {
+function runRegistry(args: readonly string[]): void {
   const result = spawnSync("reg.exe", [...args], { encoding: "utf8", windowsHide: true });
-  if (result.status !== 0 && !tolerateMissing) {
+  if (result.status !== 0) {
     throw new Error(result.stderr.trim() || result.stdout.trim() || "Registry update failed");
   }
 }
@@ -135,7 +136,7 @@ async function uninstall(): Promise<void> {
       "HKCU\\Software\\Chromium\\NativeMessagingHosts",
       "HKCU\\Software\\Mozilla\\NativeMessagingHosts",
     ]) {
-      runRegistry(["delete", `${root}\\${HOST_NAME}`, "/f"], true);
+      removeRegistryRegistration(`${root}\\${HOST_NAME}`);
     }
   } else {
     const home = os.homedir();

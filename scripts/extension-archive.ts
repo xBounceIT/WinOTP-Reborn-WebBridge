@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
 import { strFromU8, unzipSync } from "fflate";
+import { assertBoundedZipDirectory, readBoundedArchive } from "./zip-bounds.ts";
 
 export type ExtensionTarget = "chrome" | "firefox";
 
@@ -13,53 +13,12 @@ const EXPECTED_FILES = [
   "icons/winotp-32.png",
   "icons/winotp-48.png",
   "manifest.json",
+  "overlay.js",
   "popup.css",
   "popup.html",
   "popup.js",
   "third-party-licenses.txt",
 ];
-
-function assertBoundedZipDirectory(archive: Uint8Array): void {
-  const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
-  const searchStart = Math.max(0, archive.byteLength - 65_557);
-  let end = -1;
-  for (let offset = archive.byteLength - 22; offset >= searchStart; offset -= 1) {
-    if (view.getUint32(offset, true) === 0x0605_4b50) {
-      end = offset;
-      break;
-    }
-  }
-  if (end < 0) throw new Error("Extension archive has no ZIP directory");
-
-  const entries = view.getUint16(end + 10, true);
-  const directorySize = view.getUint32(end + 12, true);
-  const directoryOffset = view.getUint32(end + 16, true);
-  if (entries !== EXPECTED_FILES.length || directoryOffset + directorySize > end) {
-    throw new Error("Extension archive has an invalid ZIP directory");
-  }
-
-  let offset = directoryOffset;
-  let uncompressedBytes = 0;
-  for (let index = 0; index < entries; index += 1) {
-    if (offset + 46 > end || view.getUint32(offset, true) !== 0x0201_4b50) {
-      throw new Error("Extension archive has an invalid ZIP entry");
-    }
-    const uncompressedSize = view.getUint32(offset + 24, true);
-    const nameLength = view.getUint16(offset + 28, true);
-    const extraLength = view.getUint16(offset + 30, true);
-    const commentLength = view.getUint16(offset + 32, true);
-    if (uncompressedSize === 0xffff_ffff)
-      throw new Error("ZIP64 extension archives are not supported");
-    uncompressedBytes += uncompressedSize;
-    if (uncompressedBytes > MAX_UNCOMPRESSED_BYTES) {
-      throw new Error("Extension archive exceeds the uncompressed size limit");
-    }
-    offset += 46 + nameLength + extraLength + commentLength;
-  }
-  if (offset !== directoryOffset + directorySize) {
-    throw new Error("Extension archive ZIP directory length is inconsistent");
-  }
-}
 
 function asObject(value: unknown, description: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -72,12 +31,14 @@ export async function validateExtensionArchive(
   archivePath: string,
   target: ExtensionTarget,
   expectedVersion: string,
-): Promise<void> {
-  const archive = await readFile(archivePath);
-  if (archive.byteLength === 0 || archive.byteLength > MAX_ARCHIVE_BYTES) {
-    throw new Error("Extension archive has an invalid size");
-  }
-  assertBoundedZipDirectory(archive);
+): Promise<Buffer<ArrayBuffer>> {
+  const archive = await readBoundedArchive(archivePath, MAX_ARCHIVE_BYTES, "Extension archive");
+  assertBoundedZipDirectory(
+    archive,
+    MAX_UNCOMPRESSED_BYTES,
+    "Extension archive",
+    EXPECTED_FILES.length,
+  );
 
   let files: Record<string, Uint8Array>;
   try {
@@ -120,4 +81,5 @@ export async function validateExtensionArchive(
       throw new Error("Firefox archive contains an unexpected extension ID");
     }
   }
+  return archive;
 }

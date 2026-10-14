@@ -23,6 +23,7 @@ test("creates and validates a reproducible Firefox reviewer source archive", asy
     assert.ok(names.includes("PRIVACY.md"));
     assert.ok(names.includes("src/shared/protocol.ts"));
     assert.ok(names.includes("public/icons/winotp-128.png"));
+    assert.ok(names.includes("scripts/zip-bounds.ts"));
     assert.ok(
       names.every(
         (name) =>
@@ -62,6 +63,16 @@ test("rejects malformed or incomplete Firefox source archives", async () => {
       zipSync({ "package.json": strToU8(JSON.stringify({ version: "1.0.0" })) }),
     );
     await assert.rejects(validateFirefoxSourceArchive(incomplete, "1.0.0"), /is missing/u);
+
+    const oversized = zipSync({ "package.json": strToU8("{}") });
+    const view = new DataView(oversized.buffer, oversized.byteOffset, oversized.byteLength);
+    const directory = view.getUint32(oversized.length - 6, true);
+    view.setUint32(directory + 24, 201 * 1024 * 1024, true);
+    await writeFile(malformed, oversized);
+    await assert.rejects(
+      validateFirefoxSourceArchive(malformed, "1.0.0"),
+      /uncompressed size limit/u,
+    );
   } finally {
     await rm(outputDirectory, { recursive: true, force: true });
   }

@@ -10,7 +10,7 @@ import type { NativeGateway } from "./state.ts";
 const DEFAULT_BACKGROUND_TIMEOUT_MS = 7_000;
 
 export function createGateway(
-  runtime: RuntimeApi,
+  runtime: Pick<RuntimeApi, "sendMessage" | "lastError">,
   timeoutMs = DEFAULT_BACKGROUND_TIMEOUT_MS,
 ): NativeGateway {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {

@@ -31,7 +31,7 @@ async function checkedFetch(url: string, init: RequestInit): Promise<Record<stri
 const archive =
   process.env.CHROME_EXTENSION_ZIP ??
   path.join(repositoryRoot, "dist", `winotp-reborn-${packageJson.version}-chrome.zip`);
-await validateExtensionArchive(archive, "chrome", packageJson.version);
+const archiveBytes = await validateExtensionArchive(archive, "chrome", packageJson.version);
 
 const clientId = requiredEnvironment("CHROME_CLIENT_ID");
 const clientSecret = requiredEnvironment("CHROME_CLIENT_SECRET");
@@ -63,7 +63,7 @@ const upload = await checkedFetch(
   {
     method: "POST",
     headers: { ...authorization, "content-type": "application/zip" },
-    body: await readFile(archive),
+    body: archiveBytes,
   },
 );
 if (upload.itemId !== extensionId) {

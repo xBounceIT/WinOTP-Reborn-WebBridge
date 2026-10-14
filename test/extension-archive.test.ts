@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { strToU8, zipSync, type Zippable } from "fflate";
+import { strToU8, unzipSync, zipSync, type Zippable } from "fflate";
 import { validateExtensionArchive, type ExtensionTarget } from "../scripts/extension-archive.ts";
 
 const expectedFiles: Zippable = {
@@ -15,6 +15,7 @@ const expectedFiles: Zippable = {
   "popup.css": strToU8(""),
   "popup.html": strToU8(""),
   "popup.js": strToU8(""),
+  "overlay.js": strToU8(""),
   "third-party-licenses.txt": strToU8("jsQR: Apache-2.0"),
 };
 
@@ -47,7 +48,10 @@ async function writeArchive(
 test("accepts only the expected browser archive and release version", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "winotp-archive-test-"));
   try {
-    await validateExtensionArchive(await writeArchive(directory, "chrome"), "chrome", "0.1.0");
+    const archivePath = await writeArchive(directory, "chrome");
+    const snapshot = await validateExtensionArchive(archivePath, "chrome", "0.1.0");
+    await writeFile(archivePath, "replacement");
+    assert.equal(unzipSync(snapshot)["manifest.json"]?.length !== 0, true);
     await validateExtensionArchive(await writeArchive(directory, "firefox"), "firefox", "0.1.0");
 
     await assert.rejects(
@@ -64,7 +68,7 @@ test("accepts only the expected browser archive and release version", async () =
         "firefox",
         "0.1.0",
       ),
-      /invalid ZIP directory|unexpected files/u,
+      /valid ZIP directory|unexpected files/u,
     );
     await assert.rejects(
       validateExtensionArchive(

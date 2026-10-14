@@ -37,5 +37,5 @@ same source archive, the generated Firefox ZIP is byte-for-byte reproducible.
 The extension communicates only with the locally installed `com.xbounceit.winotp` Native
 Messaging host. To exercise the complete UI, install a compatible WinOTP Reborn desktop
 release, enable browser extension access in WinOTP settings, and then open the extension
-popup. The extension has no content scripts, host permissions, remote services, or test
+popup. The QR selection overlay is injected only on an explicit scan action, using activeTab and scripting. The extension has no persistent host permissions, remote services, or test
 credentials.
