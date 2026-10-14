@@ -1,6 +1,6 @@
 import jsQR from "jsqr";
+import { validateImageHeader } from "./image-bounds.ts";
 import { createRequest, isQrText, type ErrorCode } from "../shared/protocol.ts";
-import { NativeTransportError } from "../shared/transport.ts";
 import type { NativeGateway } from "./state.ts";
 import { getRuntime } from "../shared/webextension.ts";
 
@@ -46,6 +46,17 @@ export async function readQrImage(blob: Blob): Promise<string> {
     blob.size === 0
   ) {
     throw new Error("Choose a PNG, JPEG or WebP image up to 10 MB.");
+  }
+  let encoded: Uint8Array;
+  try {
+    encoded = new Uint8Array(await blob.arrayBuffer());
+  } catch {
+    throw new Error("Could not read this image. Choose a PNG, JPEG or WebP file.");
+  }
+  try {
+    validateImageHeader(encoded, blob.type, MAX_IMAGE_PIXELS);
+  } finally {
+    encoded.fill(0);
   }
   let bitmap: ImageBitmap;
   try {
@@ -110,16 +121,7 @@ export function capturePage(): Promise<Blob> {
 }
 
 export async function sendQr(gateway: NativeGateway, text: string): Promise<void> {
-  const response = await gateway
-    .request<{ accepted: true }>(createRequest("importQr", { text }))
-    .catch((error: unknown) => {
-      if (error instanceof NativeTransportError) {
-        throw new Error(
-          "Could not confirm delivery. Check WinOTP for a pending import before scanning again.",
-        );
-      }
-      throw error;
-    });
+  const response = await gateway.request<{ accepted: true }>(createRequest("importQr", { text }));
   if (response.ok) return;
   switch (response.error.code) {
     case "APP_LOCKED":

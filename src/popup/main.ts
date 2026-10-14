@@ -1,4 +1,5 @@
 import type { TotpResult } from "../shared/protocol.ts";
+import { NativeTransportError } from "../shared/transport.ts";
 import { getRuntime } from "../shared/webextension.ts";
 import { createGateway } from "./gateway.ts";
 import { capturePage, QrImportError, readQrImage, sendQr } from "./scan.ts";
@@ -197,6 +198,7 @@ function render(): void {
       <p class="connection connection--${state.kind}">${connectionLabel}</p>
     </header>
     ${state.kind === "ready" ? accountView(state) : statusView(state.kind)}
+    ${state.kind !== "ready" && scanMessage ? `<p class="scan__message" role="status">${escapeHtml(scanMessage)}</p>` : ""}
     <div class="toast" role="status" aria-live="polite" hidden>Code copied</div>
   </main>`;
 
@@ -247,10 +249,16 @@ async function scan(source: () => Promise<Blob>): Promise<void> {
     scanMessage =
       "QR sent. Review and confirm the import in WinOTP, then reopen the extension to refresh accounts.";
   } catch (error) {
-    scanMessage = error instanceof Error ? error.message : "Could not scan the QR code. Try again.";
+    scanMessage =
+      error instanceof NativeTransportError
+        ? "Could not confirm delivery. Check WinOTP for a pending import before scanning again."
+        : error instanceof Error
+          ? error.message
+          : "Could not scan the QR code. Try again.";
     if (
-      error instanceof QrImportError &&
-      (error.code === "APP_LOCKED" || error.code === "APP_NOT_RUNNING") &&
+      (error instanceof NativeTransportError ||
+        (error instanceof QrImportError &&
+          (error.code === "APP_LOCKED" || error.code === "APP_NOT_RUNNING"))) &&
       state.kind === "ready"
     ) {
       state = stateForTotpError(error, state);

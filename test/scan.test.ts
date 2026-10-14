@@ -17,6 +17,10 @@ import { NativeTransportError } from "../src/shared/transport.ts";
 const matrices = JSON.parse(
   readFileSync(new URL("./fixtures/qr.json", import.meta.url), "utf8"),
 ) as Record<"auth" | "url", string[]>;
+const samplePng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZ1kAAAAASUVORK5CYII=",
+  "base64",
+);
 function pixels(rows: string[], inverted = false): ImageData {
   const scale = 5;
   const width = (rows.length + 8) * scale;
@@ -151,7 +155,7 @@ test("image scan UI waits for acknowledgement, prevents duplicate submissions, a
     assert.doesNotMatch(markup, /data-scan-page/);
     change?.(); // Cancelling file selection does not send anything.
     assert.equal(imports, 0);
-    fileInput.files = [new Blob(["image"], { type: "image/png" })];
+    fileInput.files = [new Blob([samplePng], { type: "image/png" })];
     change?.();
     change?.();
     await tick();
@@ -208,6 +212,28 @@ test("image scan UI waits for acknowledgement, prevents duplicate submissions, a
     await tick();
     assert.match(markup, /connection--app-not-running/);
     assert.doesNotMatch(markup, /Private account|Private issuer|data-qr-file/);
+    for (const [reason, expectedState] of [
+      ["HOST_UNAVAILABLE", "host-missing"],
+      ["TIMEOUT", "connection-error"],
+      ["NATIVE_ERROR", "connection-error"],
+      ["INVALID_RESPONSE", "connection-error"],
+      ["UNSUPPORTED_PROTOCOL", "incompatible"],
+    ] as const) {
+      retry?.();
+      await tick();
+      assert.match(markup, /Private account/);
+      change?.();
+      await tick();
+      const sent: number = imports;
+      reply?.({ kind: "transport-error", reason });
+      await tick();
+      assert.match(markup, new RegExp(`connection--${expectedState}`));
+      assert.match(markup, /Check WinOTP for a pending import before scanning again/);
+      assert.doesNotMatch(markup, /Private account|Private issuer|data-qr-file|Connected/);
+      change?.();
+      await tick();
+      assert.equal(imports, sent);
+    }
   } finally {
     for (const undo of restore.reverse()) undo();
   }
@@ -249,8 +275,13 @@ test("reads local images, bounds inputs, and clears canvas and pixel buffers", a
       },
     };
   });
-  const blob = new Blob(["test"], { type: "image/png" });
+  const blob = new Blob([samplePng], { type: "image/png" });
   try {
+    const unreadable = new Blob([samplePng], { type: "image/png" });
+    unreadable.arrayBuffer = async () => {
+      throw new Error("private read failure");
+    };
+    await assert.rejects(readQrImage(unreadable), /Could not read this image/);
     assert.match(await readQrImage(blob), /^otpauth:\/\//);
     assert.ok(image.data.every((byte) => byte === 0));
     assert.equal(canvas.width, 0);
@@ -348,24 +379,23 @@ test("hands off exactly one opaque QR request and reports safe desktop failures"
   assert.equal(requests.length, 6);
 });
 
-test("uncertain import delivery tells the user to inspect WinOTP without retrying automatically", async () => {
+test("uncertain import delivery preserves transport reasons without retrying automatically", async () => {
   let calls = 0;
   for (const reason of [
     "TIMEOUT",
     "NATIVE_ERROR",
     "INVALID_RESPONSE",
     "HOST_UNAVAILABLE",
+    "UNSUPPORTED_PROTOCOL",
   ] as const) {
+    const failure = new NativeTransportError(reason);
     const gateway: NativeGateway = {
       async request() {
         calls++;
-        throw new NativeTransportError(reason);
+        throw failure;
       },
     };
-    await assert.rejects(
-      sendQr(gateway, "otpauth://test"),
-      /Check WinOTP for a pending import before scanning again/,
-    );
+    await assert.rejects(sendQr(gateway, "otpauth://test"), (error: unknown) => error === failure);
   }
-  assert.equal(calls, 4);
+  assert.equal(calls, 5);
 });

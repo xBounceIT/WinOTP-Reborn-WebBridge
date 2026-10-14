@@ -26,7 +26,7 @@ The extension receives only account `id`, `issuer`, and `name` from WinOTP. A TO
 
 With WinOTP connected and unlocked, select **Scan page QR** to scan the visible area of the active browser tab. Make the entire QR visible; if several codes are present, use a cropped image of the desired code. The `activeTab` permission grants access when you invoke the extension, with no persistent website access or content scripts.
 
-Select **Scan image…** to open a dedicated extension page and choose a PNG, JPEG or WebP file (up to 10 MB and 16 megapixels). Keeping file selection in a tab avoids popup closure while the file picker is open. QR decoding uses the bundled jsQR library locally, including on Firefox; no camera or network service is used.
+Select **Scan image…** to open a dedicated extension page and choose a PNG, JPEG or static WebP file (up to 10 MB and 16 megapixels). Encoded image dimensions are checked before browser decoding. Keeping file selection in a tab avoids popup closure while the file picker is open. QR decoding uses the bundled jsQR library locally, including on Firefox; no camera or network service is used.
 
 The decoded `otpauth://` or `otpauth-migration://` payload is forwarded only to WinOTP for review. The extension does not parse account secrets, generate OTPs, or persist scanned data. **Import requires a desktop release and native host implementing `importQr`**, described in [the desktop contract](docs/desktop-integration.md). Older releases display an update/unsupported message; an acknowledgement means the desktop has opened an import review, not that an account was saved. Confirm in WinOTP, then reopen the extension to refresh the account list.
 
