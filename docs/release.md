@@ -27,6 +27,40 @@ GitHub Actions secrets:
 
 The publisher uses the official Chrome Web Store API v2 upload and publish endpoints. Store credentials are injected only into the publication step, after checkout, dependency installation, and artifact download; they are never written into extension artifacts.
 
+### Recovering an incomplete Chrome submission
+
+`INVALID_ITEM_METADATA` from the publish endpoint means that the uploaded package cannot
+be submitted until the item's dashboard metadata is completed. Changing the ZIP, increasing
+the version, or disabling `blockOnWarnings` does not complete these required fields. The v2
+API cannot edit Store Listing, Privacy practices, or Distribution metadata.
+
+Open the item's Developer Dashboard and check the publishing requirements. Complete the
+description, category, language, required images, distribution settings, privacy-policy URL,
+single purpose, permission justifications, remote-code declaration, and data-use disclosures
+as indicated by the dashboard. For the current extension, these descriptions explain the
+permissions:
+
+- Single purpose: Connect the browser to the local WinOTP Reborn desktop app to request
+  one-time passwords and send explicitly selected authenticator QR codes for desktop import review.
+- `nativeMessaging`: Exchange account labels and explicitly requested codes with the local
+  WinOTP Reborn bridge, and forward a user-confirmed QR import to the desktop app.
+- `activeTab`: Capture the visible tab only after the user explicitly starts a QR scan.
+- `scripting`: Inject the bundled selection overlay so the user can select and confirm the
+  area to decode. No page content is inspected automatically.
+- Remote code: None; the selection overlay and QR decoder are bundled with the extension.
+
+Data-use disclosures must reflect `PRIVACY.md`, including temporary local processing of
+account labels, requested authentication codes, and the selected QR image. Do not infer that
+all data-use fields can be left blank merely because there is no remote transmission.
+
+After saving the missing dashboard fields, run **Retry Chrome Web Store submission** from
+GitHub Actions on `main`, with `release_tag` set to `v1.1.0` (or the existing release matching
+the current package version). This downloads and validates the original Chrome ZIP from
+the existing GitHub Release, then retries upload and submission. It preserves the release
+version, tag, and assets and does not submit Firefox again. The regular tag workflow is for
+new releases; rerunning it in full would also attempt to recreate the existing GitHub Release
+and resubmit the Firefox version.
+
 ## Firefox AMO one-time setup
 
 The stable extension GUID is already in the manifest. Create AMO API credentials and add:

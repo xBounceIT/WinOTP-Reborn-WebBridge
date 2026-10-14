@@ -92,6 +92,30 @@ test("runs store publication entrypoints against local fetch doubles", async () 
     );
     assert.match(chromeOutput, /Chrome Web Store submission state: PUBLISHED/u);
 
+    await writeFile(
+      archive,
+      await readFile(path.join(repositoryRoot, "dist", "winotp-reborn-1.1.0-chrome.zip")),
+    );
+    await assert.rejects(
+      runScript(
+        "scripts/publish-chrome.ts",
+        [],
+        {
+          ...process.env,
+          CHROME_CLIENT_ID: "test-client",
+          CHROME_CLIENT_SECRET: "test-secret",
+          CHROME_EXTENSION_ID: extensionId,
+          CHROME_PUBLISHER_ID: "test-publisher",
+          CHROME_REFRESH_TOKEN: "test-refresh-token",
+          CHROME_EXTENSION_ZIP: archive,
+          WINOTP_TEST_STORE: "chrome",
+          WINOTP_TEST_CHROME_METADATA_ERROR: "true",
+        },
+        ["--import", storePreload],
+      ),
+      /INVALID_ITEM_METADATA.*Retry Chrome Web Store submission/u,
+    );
+
     const firefoxOutput = await runScript(
       "scripts/publish-firefox.ts",
       [],

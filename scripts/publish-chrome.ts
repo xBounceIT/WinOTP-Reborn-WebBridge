@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertChromePublication, waitForChromeUpload } from "./chrome-store.ts";
+import {
+  assertChromePublication,
+  chromeStoreApiError,
+  waitForChromeUpload,
+} from "./chrome-store.ts";
 import { validateExtensionArchive } from "./extension-archive.ts";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -21,9 +25,7 @@ async function checkedFetch(url: string, init: RequestInit): Promise<Record<stri
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(60_000) });
   const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok) {
-    const message =
-      typeof body.error === "object" ? JSON.stringify(body.error) : response.statusText;
-    throw new Error(`Chrome Web Store API request failed (${response.status}): ${message}`);
+    throw chromeStoreApiError(response.status, body);
   }
   return body;
 }

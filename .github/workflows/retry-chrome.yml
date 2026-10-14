@@ -1,0 +1,50 @@
+name: Retry Chrome Web Store submission
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing GitHub release tag matching the publisher's package version
+        required: true
+        type: string
+        default: v1.1.0
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webbridge-release-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  chrome-store:
+    name: Resubmit existing Chrome release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: current
+          cache: npm
+      - run: npm ci --strict-allow-scripts
+      - env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: node scripts/verify-release-tag.ts
+      - name: Download the original release archive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "winotp-reborn-${RELEASE_TAG#v}-chrome.zip" --dir dist
+      - name: Submit to Chrome Web Store
+        env:
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+          CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          CHROME_EXTENSION_ZIP="dist/winotp-reborn-${RELEASE_TAG#v}-chrome.zip"
+          export CHROME_EXTENSION_ZIP
+          node scripts/publish-chrome.ts

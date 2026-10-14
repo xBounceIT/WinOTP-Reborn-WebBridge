@@ -2,6 +2,27 @@ export type ChromeStoreResponse = Record<string, unknown>;
 
 const MAX_POLL_ATTEMPTS = 30;
 
+export function chromeStoreApiError(status: number, body: ChromeStoreResponse): Error {
+  const error = body.error;
+  const details =
+    typeof error === "object" && error !== null && "details" in error ? error.details : undefined;
+  const invalidMetadata =
+    Array.isArray(details) &&
+    details.some(
+      (detail: unknown) =>
+        typeof detail === "object" &&
+        detail !== null &&
+        "reason" in detail &&
+        detail.reason === "INVALID_ITEM_METADATA",
+    );
+  const guidance = invalidMetadata
+    ? " The ZIP upload succeeded, but the Store listing is incomplete or invalid. Complete the Store Listing, Privacy practices (including a justification for every permission), and Distribution tabs in the Developer Dashboard. See docs/release.md, then retry the same release with the Retry Chrome Web Store submission workflow. The API cannot edit these dashboard fields."
+    : "";
+  return new Error(
+    `Chrome Web Store API request failed (${status}): ${JSON.stringify(error ?? body)}${guidance}`,
+  );
+}
+
 export async function waitForChromeUpload(
   upload: ChromeStoreResponse,
   fetchStatus: () => Promise<ChromeStoreResponse>,

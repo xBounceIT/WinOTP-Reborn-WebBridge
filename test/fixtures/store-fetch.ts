@@ -35,6 +35,9 @@ globalThis.fetch = async (input, init) => {
       });
     }
     if (requestIndex === 3 && url.endsWith(":publish") && method === "POST") {
+      if (process.env.WINOTP_TEST_CHROME_METADATA_ERROR === "true") {
+        return jsonResponse({ error: { details: [{ reason: "INVALID_ITEM_METADATA" }] } }, 400);
+      }
       return jsonResponse({ itemId: extensionId, state: "PUBLISHED" });
     }
   }
